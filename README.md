@@ -40,12 +40,13 @@ npm run build
 
 ## Planned phases
 
-1. Core research OS UI and local state
-2. Persistent database layer
-3. Hermes `investment` profile integration
-4. Telegram research request flow via IdrisInvestmentBot
-5. Market data adapters: yfinance/OpenBB/FinanceToolkit/PyPortfolioOpt
-6. Decision journal and recurring frontier radar
+1. Core research OS UI and local state — complete
+2. Browser-local persistent workspace with JSON backup/restore — complete
+3. Server database layer and authenticated cloud sync
+4. Hermes `investment` profile integration
+5. Telegram research request flow via IdrisInvestmentBot
+6. Market data adapters: yfinance/OpenBB/FinanceToolkit/PyPortfolioOpt
+7. Decision journal and recurring frontier radar
 
 ## Guardrails
 

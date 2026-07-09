@@ -38,3 +38,11 @@ export interface ResearchItem {
   createdAt: string;
   sources: EvidenceSource[];
 }
+
+export interface InvestmentAppState {
+  schemaVersion: 1;
+  profile: InvestmentProfile;
+  researchItems: ResearchItem[];
+  selectedResearchId: string;
+  lastSavedAt: string;
+}

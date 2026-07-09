@@ -1,8 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { defaultProfile, sampleResearchItems } from "@/lib/sample-data";
-import type { Decision, EvidenceSource, InvestmentProfile, ResearchItem, ResearchStatus } from "@/lib/types";
+import {
+  createInitialInvestmentState,
+  deserializeInvestmentState,
+  INVESTMENT_STORAGE_KEY,
+  serializeInvestmentState,
+  updateStateMetadata,
+} from "@/lib/storage";
+import type { Decision, EvidenceSource, InvestmentAppState, InvestmentProfile, ResearchItem, ResearchStatus } from "@/lib/types";
 
 const statusLabels: Record<ResearchStatus, string> = {
   inbox: "Research Inbox",
@@ -38,9 +45,15 @@ function uid(prefix: string) {
 }
 
 export default function InvestmentDashboard() {
-  const [profile, setProfile] = useState<InvestmentProfile>(defaultProfile);
-  const [items, setItems] = useState<ResearchItem[]>(sampleResearchItems);
-  const [selectedId, setSelectedId] = useState(sampleResearchItems[0]?.id ?? "");
+  const initialState = useMemo(() => createInitialInvestmentState(defaultProfile, sampleResearchItems), []);
+  const [profile, setProfile] = useState<InvestmentProfile>(initialState.profile);
+  const [items, setItems] = useState<ResearchItem[]>(initialState.researchItems);
+  const [selectedId, setSelectedId] = useState(initialState.selectedResearchId);
+  const [lastSavedAt, setLastSavedAt] = useState(initialState.lastSavedAt);
+  const [isHydrated, setIsHydrated] = useState(false);
+  const [saveStatus, setSaveStatus] = useState("Loading local workspace…");
+  const [importDraft, setImportDraft] = useState("");
+  const [importMessage, setImportMessage] = useState("");
   const [draftTitle, setDraftTitle] = useState("");
   const [draftTheme, setDraftTheme] = useState("");
   const [draftAssetClass, setDraftAssetClass] = useState("ETF");
@@ -48,6 +61,37 @@ export default function InvestmentDashboard() {
   const [sourceTitle, setSourceTitle] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
   const [sourceClaim, setSourceClaim] = useState("");
+
+  useEffect(() => {
+    const stored = deserializeInvestmentState(window.localStorage.getItem(INVESTMENT_STORAGE_KEY));
+    if (stored) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Phase 2 hydrates the client workspace from browser storage after mount.
+      setProfile(stored.profile);
+      setItems(stored.researchItems);
+      setSelectedId(stored.selectedResearchId || stored.researchItems[0]?.id || "");
+      setLastSavedAt(stored.lastSavedAt);
+      setSaveStatus("Loaded saved workspace from this browser.");
+    } else {
+      setSaveStatus("Started from seed data. Changes now autosave locally.");
+    }
+    setIsHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isHydrated) return;
+    const savedAt = new Date().toISOString();
+    const state = updateStateMetadata({
+      schemaVersion: 1,
+      profile,
+      researchItems: items,
+      selectedResearchId: selectedId,
+      lastSavedAt: savedAt,
+    }, savedAt);
+    window.localStorage.setItem(INVESTMENT_STORAGE_KEY, serializeInvestmentState(state));
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Updating the visible autosave timestamp after writing to localStorage.
+    setLastSavedAt(savedAt);
+    setSaveStatus("Autosaved to this browser.");
+  }, [isHydrated, items, profile, selectedId]);
 
   const selected = items.find((item) => item.id === selectedId) ?? items[0];
 
@@ -60,6 +104,16 @@ export default function InvestmentDashboard() {
     const riskCount = items.reduce((count, item) => count + item.risks.length, 0);
     return { byStatus, evidenceCount, riskCount };
   }, [items]);
+
+  const currentState = useMemo<InvestmentAppState>(() => ({
+    schemaVersion: 1,
+    profile,
+    researchItems: items,
+    selectedResearchId: selected?.id ?? selectedId,
+    lastSavedAt,
+  }), [items, lastSavedAt, profile, selected?.id, selectedId]);
+
+  const exportJson = useMemo(() => JSON.stringify(currentState, null, 2), [currentState]);
 
   function addResearchItem() {
     if (!draftTitle.trim()) return;
@@ -108,6 +162,29 @@ export default function InvestmentDashboard() {
     setSourceClaim("");
   }
 
+  function resetWorkspace() {
+    const next = createInitialInvestmentState(defaultProfile, sampleResearchItems);
+    setProfile(next.profile);
+    setItems(next.researchItems);
+    setSelectedId(next.selectedResearchId);
+    setLastSavedAt(next.lastSavedAt);
+    setImportDraft("");
+    setImportMessage("Workspace reset to seed research data.");
+  }
+
+  function importWorkspace() {
+    const parsed = deserializeInvestmentState(importDraft);
+    if (!parsed) {
+      setImportMessage("Import failed. Paste a complete Phase 2 workspace JSON export.");
+      return;
+    }
+    setProfile(parsed.profile);
+    setItems(parsed.researchItems);
+    setSelectedId(parsed.selectedResearchId || parsed.researchItems[0]?.id || "");
+    setLastSavedAt(parsed.lastSavedAt);
+    setImportMessage("Imported workspace JSON. It will autosave locally.");
+  }
+
   return (
     <main className="min-h-screen px-5 py-6 md:px-10 lg:px-12">
       <section className="mx-auto max-w-7xl space-y-8">
@@ -131,6 +208,18 @@ export default function InvestmentDashboard() {
           <ProfileCard profile={profile} onChange={setProfile} />
           <OperatingRules />
         </section>
+
+        <PersistencePanel
+          exportJson={exportJson}
+          importDraft={importDraft}
+          importMessage={importMessage}
+          lastSavedAt={lastSavedAt}
+          saveStatus={saveStatus}
+          storageKey={INVESTMENT_STORAGE_KEY}
+          onImport={importWorkspace}
+          onImportDraftChange={setImportDraft}
+          onReset={resetWorkspace}
+        />
 
         <section className="grid gap-5 xl:grid-cols-[0.85fr_1.45fr_0.9fr]">
           <div className="space-y-5">
@@ -236,6 +325,51 @@ function OperatingRules() {
   return <Panel title="Operating Rules" subtitle="Guardrails for a trusted investment research OS.">
     <div className="grid gap-3 md:grid-cols-2">
       {["Research support only — not licensed financial advice.", "No broker connection or trade execution in this MVP.", "Every memo must show facts, assumptions, risks, and sources.", "Investment decisions remain human-owned and approval-gated.", "Agent outputs start as drafts awaiting review.", "Never store credentials, account numbers, seed phrases, or private keys."].map((rule) => <div key={rule} className="rounded-2xl border border-line bg-slate-50 p-4 text-sm font-medium leading-6 text-slate-700">{rule}</div>)}
+    </div>
+  </Panel>;
+}
+
+function PersistencePanel({
+  exportJson,
+  importDraft,
+  importMessage,
+  lastSavedAt,
+  saveStatus,
+  storageKey,
+  onImport,
+  onImportDraftChange,
+  onReset,
+}: {
+  exportJson: string;
+  importDraft: string;
+  importMessage: string;
+  lastSavedAt: string;
+  saveStatus: string;
+  storageKey: string;
+  onImport: () => void;
+  onImportDraftChange: (value: string) => void;
+  onReset: () => void;
+}) {
+  return <Panel title="Persistent Workspace" subtitle="Phase 2: browser-local persistence with portable JSON backup and restore.">
+    <div className="grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
+      <div className="space-y-3 rounded-2xl border border-line bg-slate-50 p-4 text-sm leading-6 text-slate-700">
+        <p><span className="font-semibold text-ink">Status:</span> {saveStatus}</p>
+        <p><span className="font-semibold text-ink">Last saved:</span> {new Date(lastSavedAt).toLocaleString()}</p>
+        <p><span className="font-semibold text-ink">Storage key:</span> <span className="break-all">{storageKey}</span></p>
+        <p className="text-amber-900">This persists in the current browser only. It is not yet a cloud database and does not sync across devices.</p>
+        <button className="focus-ring rounded-2xl border border-red-200 bg-white px-4 py-3 font-semibold text-red-700 transition hover:bg-red-50" onClick={onReset}>Reset local workspace</button>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <label className="block">
+          <span className="mb-1 block text-sm font-semibold text-slate-700">Export JSON backup</span>
+          <textarea className="focus-ring min-h-48 w-full rounded-2xl border border-line bg-white px-4 py-3 font-mono text-xs leading-5" value={exportJson} readOnly />
+        </label>
+        <div className="space-y-3">
+          <Textarea label="Import JSON backup" value={importDraft} onChange={onImportDraftChange} placeholder="Paste a Phase 2 workspace export here" />
+          <button className="focus-ring rounded-2xl bg-ink px-4 py-3 font-semibold text-white transition hover:bg-slate-700" onClick={onImport}>Import workspace</button>
+          {importMessage ? <p className="rounded-2xl bg-blue-50 p-4 text-sm font-semibold text-blue-950">{importMessage}</p> : null}
+        </div>
+      </div>
     </div>
   </Panel>;
 }
