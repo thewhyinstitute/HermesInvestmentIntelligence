@@ -166,6 +166,7 @@ a:hover { text-decoration: underline; }
   transition: transform 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
 }
 .primary-button { background: var(--ink); color: white; box-shadow: 0 10px 24px rgba(15, 23, 42, 0.18); }
+.primary-button:disabled { cursor: not-allowed; opacity: 0.6; transform: none; }
 .secondary-button { border: 1px solid var(--line); background: white; color: var(--ink); }
 .danger-button { border: 1px solid #fecaca; background: #fff1f2; color: var(--red); }
 .primary-button:hover, .secondary-button:hover, .danger-button:hover { transform: translateY(-1px); }
@@ -211,6 +212,15 @@ a:hover { text-decoration: underline; }
   color: white;
   padding: 24px;
 }
+.agent-status {
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: #f8fbff;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+}
+.agent-status p:last-child { margin: 0; color: #475569; font-weight: 700; line-height: 1.55; }
+.priority-action { margin-top: 16px; }
 .priority-card .tag { background: rgba(255,255,255,0.14); color: #dbeafe; }
 .priority-card h3 { margin-top: 10px; font-size: 1.8rem; letter-spacing: -0.04em; }
 .priority-card p { color: #dbeafe; line-height: 1.65; }

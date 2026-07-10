@@ -93,6 +93,8 @@ export default function InvestmentDashboard() {
   const [decisionRationale, setDecisionRationale] = useState("");
   const [radarTheme, setRadarTheme] = useState("");
   const [radarSignal, setRadarSignal] = useState("");
+  const [radarScanStatus, setRadarScanStatus] = useState("Autonomous radar has not run yet.");
+  const [isScanningRadar, setIsScanningRadar] = useState(false);
   const [activeView, setActiveView] = useState<"radar" | "inbox" | "memo" | "fit" | "journal" | "settings">("radar");
 
   useEffect(() => {
@@ -244,6 +246,33 @@ export default function InvestmentDashboard() {
     setActiveView("memo");
   }
 
+  async function runAutonomousRadar() {
+    setIsScanningRadar(true);
+    setRadarScanStatus("Scanning selected themes and gathering evidence links…");
+    try {
+      const response = await fetch("/api/radar", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ profile })
+      });
+      if (!response.ok) throw new Error("Radar scan failed");
+      const payload = await response.json() as { mode: string; opportunities: ResearchItem[] };
+      const incoming = payload.opportunities ?? [];
+      setItems((current) => {
+        const existingTitles = new Set(current.map((item) => item.title.toLowerCase()));
+        const fresh = incoming.filter((item) => !existingTitles.has(item.title.toLowerCase()));
+        return [...fresh, ...current];
+      });
+      if (incoming[0]) setSelectedId(incoming[0].id);
+      setRadarScanStatus(`Radar found ${incoming.length} evidence-backed opportunity memo(s). Mode: ${payload.mode}. Human review still required.`);
+      setActiveView("radar");
+    } catch {
+      setRadarScanStatus("Radar scan failed. Keep using manual capture while we reconnect the research agent.");
+    } finally {
+      setIsScanningRadar(false);
+    }
+  }
+
   function resetWorkspace() {
     const next = createInitialInvestmentState(defaultProfile, sampleResearchItems);
     setProfile(next.profile);
@@ -320,7 +349,7 @@ export default function InvestmentDashboard() {
           <Metric label="Trust score" value={trust?.score ?? 0} tone={trust?.decisionReady ? undefined : "warn"} />
         </div>
 
-        {activeView === "radar" ? <RadarView highestPriority={highestPriority} signals={radarSignals} theme={radarTheme} signal={radarSignal} onAdd={addRadarSignal} onPromote={promoteRadarSignal} onSignalChange={setRadarSignal} onThemeChange={setRadarTheme} onOpenMemo={() => setActiveView("memo")} /> : null}
+        {activeView === "radar" ? <RadarView highestPriority={highestPriority} signals={radarSignals} theme={radarTheme} signal={radarSignal} scanStatus={radarScanStatus} isScanning={isScanningRadar} onAdd={addRadarSignal} onPromote={promoteRadarSignal} onRunScan={runAutonomousRadar} onSignalChange={setRadarSignal} onThemeChange={setRadarTheme} onOpenMemo={() => setActiveView("memo")} /> : null}
         {activeView === "inbox" ? <InboxView items={items} selectedId={selected?.id ?? ""} draftAssetClass={draftAssetClass} draftTheme={draftTheme} draftTitle={draftTitle} draftWhyNow={draftWhyNow} agentInbox={agentInbox} agentRequestDraft={agentRequestDraft} onAdd={addResearchItem} onAssetClassChange={setDraftAssetClass} onDraft={draftSelectedRequest} onAgentDraftChange={setAgentRequestDraft} onQueueAgent={queueAgentRequest} onSelect={setSelectedId} onThemeChange={setDraftTheme} onTitleChange={setDraftTitle} onWhyNowChange={setDraftWhyNow} /> : null}
         {activeView === "memo" && selected ? <MemoView item={selected} update={updateSelected} sourceClaim={sourceClaim} sourceTitle={sourceTitle} sourceUrl={sourceUrl} onAddEvidence={addEvidence} onClaimChange={setSourceClaim} onTitleChange={setSourceTitle} onUrlChange={setSourceUrl} /> : null}
         {activeView === "fit" && selected && fit ? <FitView item={selected} profile={profile} fit={fit} /> : null}
@@ -362,12 +391,13 @@ function Select<T extends string>({ label, value, onChange, options }: { label: 
   return <label className="field"><span>{label}</span><select value={value} onChange={(event) => onChange(event.target.value as T)}>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>;
 }
 
-function RadarView({ highestPriority, signals, theme, signal, onAdd, onPromote, onSignalChange, onThemeChange, onOpenMemo }: { highestPriority?: ResearchItem; signals: FrontierRadarSignal[]; theme: string; signal: string; onAdd: () => void; onPromote: (signal: FrontierRadarSignal) => void; onSignalChange: (value: string) => void; onThemeChange: (value: string) => void; onOpenMemo: () => void }) {
+function RadarView({ highestPriority, signals, theme, signal, scanStatus, isScanning, onAdd, onPromote, onRunScan, onSignalChange, onThemeChange, onOpenMemo }: { highestPriority?: ResearchItem; signals: FrontierRadarSignal[]; theme: string; signal: string; scanStatus: string; isScanning: boolean; onAdd: () => void; onPromote: (signal: FrontierRadarSignal) => void; onRunScan: () => void; onSignalChange: (value: string) => void; onThemeChange: (value: string) => void; onOpenMemo: () => void }) {
   return <div className="view-grid two-col">
-    <Panel title="Today’s priority" subtitle="The strongest item to review next." action={<button className="secondary-button" onClick={onOpenMemo}>Open memo</button>}>
-      {highestPriority ? <div className="priority-card"><p className="tag">{highestPriority.theme}</p><h3>{highestPriority.title}</h3><p>{highestPriority.whyNow}</p><div className="checklist"><span>{highestPriority.sources.length} source(s)</span><span>{highestPriority.openQuestions.length} open question(s)</span><span>{highestPriority.confidence} confidence</span></div><strong>Next: {nextActionFor(highestPriority)}</strong></div> : <EmptyState text="No research items yet. Add your first idea from Inbox." />}
+    <Panel title="Autonomous opportunity radar" subtitle="Let the agent surface evidence-backed opportunities for human review." action={<button className="primary-button" onClick={onRunScan} disabled={isScanning}>{isScanning ? "Scanning…" : "Run radar scan"}</button>}>
+      <div className="agent-status"><p className="eyebrow">Agent status</p><p>{scanStatus}</p></div>
+      {highestPriority ? <div className="priority-card"><p className="tag">{highestPriority.theme}</p><h3>{highestPriority.title}</h3><p>{highestPriority.whyNow}</p><div className="checklist"><span>{highestPriority.sources.length} source(s)</span><span>{highestPriority.openQuestions.length} open question(s)</span><span>{highestPriority.confidence} confidence</span></div><strong>Next: {nextActionFor(highestPriority)}</strong><button className="secondary-button priority-action" onClick={onOpenMemo}>Open memo</button></div> : <EmptyState text="No research items yet. Run radar scan or add your first idea from Inbox." />}
     </Panel>
-    <Panel title="Frontier radar" subtitle="Signals you may want to promote into research.">
+    <Panel title="Manual frontier radar" subtitle="Signals you may want to promote into research.">
       <div className="compact-form"><Input label="Theme" value={theme} onChange={onThemeChange} placeholder="e.g. Edge AI" /><Textarea label="Signal" value={signal} onChange={onSignalChange} placeholder="What changed, and why might it matter?" rows={3} /><button className="primary-button" onClick={onAdd}>Add signal</button></div>
       <div className="card-list">{signals.map((item) => <article key={item.id} className="signal-card"><div><p className="tag">{item.urgency} urgency</p><h4>{item.theme}</h4></div><p>{item.signal}</p><p><strong>Next:</strong> {item.nextAction}</p><button className="secondary-button" onClick={() => onPromote(item)}>Promote to inbox</button></article>)}</div>
     </Panel>
