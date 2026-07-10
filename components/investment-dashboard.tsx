@@ -20,17 +20,17 @@ import {
 import type { AgentResearchRequest, Decision, EvidenceSource, FrontierRadarSignal, InvestmentAppState, InvestmentProfile, ResearchItem, ResearchStatus } from "@/lib/types";
 
 const statusLabels: Record<ResearchStatus, string> = {
-  inbox: "Research Inbox",
+  inbox: "Inbox",
   watch: "Watchlist",
-  memo: "Thesis Workbench",
-  decided: "Decision Journal",
+  memo: "Memo",
+  decided: "Decided",
   rejected: "Rejected"
 };
 
 const decisionLabels: Record<Decision, string> = {
   watch: "Watch",
   research_deeper: "Research deeper",
-  exploratory_allocation: "Exploratory allocation",
+  exploratory_allocation: "Explore allocation",
   avoid: "Avoid"
 };
 
@@ -60,6 +60,13 @@ function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function nextActionFor(item: ResearchItem) {
+  if (item.sources.length === 0) return "Attach source evidence before trusting this memo.";
+  if (item.openQuestions.length > 0) return `Resolve ${item.openQuestions.length} open question(s).`;
+  if (item.status !== "memo" && item.status !== "decided") return "Move this into the memo workbench.";
+  return "Ready for human review and decision snapshot.";
+}
+
 export default function InvestmentDashboard() {
   const initialState = useMemo(() => createInitialInvestmentState(defaultProfile, sampleResearchItems), []);
   const [profile, setProfile] = useState<InvestmentProfile>(initialState.profile);
@@ -84,6 +91,7 @@ export default function InvestmentDashboard() {
   const [decisionRationale, setDecisionRationale] = useState("");
   const [radarTheme, setRadarTheme] = useState("");
   const [radarSignal, setRadarSignal] = useState("");
+  const [activeView, setActiveView] = useState<"radar" | "inbox" | "memo" | "fit" | "journal" | "settings">("radar");
 
   useEffect(() => {
     const stored = deserializeInvestmentState(window.localStorage.getItem(INVESTMENT_STORAGE_KEY))
@@ -97,9 +105,9 @@ export default function InvestmentDashboard() {
       setRadarSignals(stored.radarSignals);
       setSync(stored.sync);
       setLastSavedAt(stored.lastSavedAt);
-      setSaveStatus(stored.schemaVersion === 2 ? "Loaded saved Phase 3 workspace from this browser." : "Migrated saved Phase 2 workspace into Phase 3 schema.");
+      setSaveStatus(stored.schemaVersion === 2 ? "Loaded saved workspace from this browser." : "Migrated saved workspace into the current schema.");
     } else {
-      setSaveStatus("Started from seed data. Changes now autosave locally.");
+      setSaveStatus("Started from seed data. Changes autosave locally.");
     }
     setIsHydrated(true);
   }, []);
@@ -124,7 +132,7 @@ export default function InvestmentDashboard() {
     window.localStorage.setItem(INVESTMENT_STORAGE_KEY, serializeInvestmentState(state));
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Reflects visible autosave timestamp after local write.
     setLastSavedAt(savedAt);
-    setSaveStatus("Autosaved to this browser. Cloud-ready schema export is current.");
+    setSaveStatus("Autosaved locally. Cloud connection not enabled yet.");
   }, [currentState, isHydrated]);
 
   const metrics = useMemo(() => {
@@ -133,12 +141,15 @@ export default function InvestmentDashboard() {
       return acc;
     }, { inbox: 0, watch: 0, memo: 0, decided: 0, rejected: 0 });
     const evidenceCount = items.reduce((count, item) => count + item.sources.length, 0);
-    const draftCount = items.reduce((count, item) => count + item.agentDrafts.length, 0);
-    const snapshotCount = items.reduce((count, item) => count + item.decisionSnapshots.length, 0);
-    return { byStatus, evidenceCount, draftCount, snapshotCount };
+    const blockers = items.reduce((count, item) => count + item.openQuestions.length, 0);
+    return { byStatus, evidenceCount, blockers, total: items.length };
   }, [items]);
 
   const exportJson = useMemo(() => JSON.stringify(currentState, null, 2), [currentState]);
+  const highestPriority = useMemo(() => [...items].sort((a, b) => {
+    const score = (item: ResearchItem) => item.sources.length * 2 - item.openQuestions.length + (item.status === "memo" ? 3 : 0) + (item.confidence === "high" ? 2 : item.confidence === "medium" ? 1 : 0);
+    return score(b) - score(a);
+  })[0], [items]);
 
   function addResearchItem() {
     if (!draftTitle.trim()) return;
@@ -166,6 +177,7 @@ export default function InvestmentDashboard() {
     };
     setItems((current) => [next, ...current]);
     setSelectedId(next.id);
+    setActiveView("memo");
     setDraftTitle("");
     setDraftTheme("");
     setDraftAssetClass("ETF");
@@ -188,7 +200,7 @@ export default function InvestmentDashboard() {
       quality: "medium",
       claim: sourceClaim.trim() || "Claim needs to be summarized from source."
     };
-    updateSelected({ sources: [...selected.sources, nextSource] });
+    updateSelected({ sources: [...selected.sources, nextSource], status: selected.status === "inbox" ? "memo" : selected.status });
     setSourceTitle("");
     setSourceUrl("");
     setSourceClaim("");
@@ -206,6 +218,7 @@ export default function InvestmentDashboard() {
     const draft = createAgentDraftFromRequest(request, selected);
     updateSelected({ agentDrafts: [draft, ...selected.agentDrafts], status: "memo" });
     setAgentInbox((current) => current.map((item) => item.id === request.id ? { ...item, status: "drafted", linkedResearchItemId: selected.id } : item));
+    setActiveView("memo");
   }
 
   function captureDecisionSnapshot() {
@@ -247,6 +260,7 @@ export default function InvestmentDashboard() {
     };
     setItems((current) => [next, ...current]);
     setSelectedId(next.id);
+    setActiveView("memo");
   }
 
   function resetWorkspace() {
@@ -265,7 +279,7 @@ export default function InvestmentDashboard() {
   function importWorkspace() {
     const parsed = deserializeInvestmentState(importDraft);
     if (!parsed) {
-      setImportMessage("Import failed. Paste a complete Phase 2 or Phase 3 workspace JSON export.");
+      setImportMessage("Import failed. Paste a complete workspace JSON export.");
       return;
     }
     setProfile(parsed.profile);
@@ -275,207 +289,183 @@ export default function InvestmentDashboard() {
     setRadarSignals(parsed.radarSignals);
     setSync(parsed.sync);
     setLastSavedAt(parsed.lastSavedAt);
-    setImportMessage("Imported workspace JSON. It will autosave locally using Phase 3 schema.");
+    setImportMessage("Imported workspace JSON. It will autosave locally.");
   }
 
+  const fit = selected ? scorePortfolioFit(selected, profile) : null;
+
   return (
-    <main className="min-h-screen px-5 py-6 md:px-10 lg:px-12">
-      <section className="mx-auto max-w-7xl space-y-8">
-        <header className="rounded-[2rem] border border-line bg-panel/85 p-7 shadow-soft backdrop-blur md:p-9">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-3xl">
-              <p className="mb-3 inline-flex rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-accent">Hermes Investment Intelligence</p>
-              <h1 className="text-4xl font-semibold tracking-tight text-ink md:text-6xl">Research OS for evidence, portfolio fit, memos, and decisions.</h1>
-              <p className="mt-5 text-lg leading-8 text-muted">Phases 3–5 local build: cloud-ready persistence contract, Hermes research intake, frontier radar, portfolio-fit checks, and decision journaling. Research support only — no trade execution.</p>
-            </div>
-            <div className="grid min-w-[18rem] grid-cols-2 gap-3 rounded-3xl bg-slate-50 p-4">
-              <Metric label="Inbox" value={metrics.byStatus.inbox} />
-              <Metric label="Evidence" value={metrics.evidenceCount} />
-              <Metric label="Agent drafts" value={metrics.draftCount} />
-              <Metric label="Snapshots" value={metrics.snapshotCount} />
-            </div>
+    <main className="app-shell">
+      <aside className="sidebar">
+        <div className="brand-lockup">
+          <div className="brand-mark">II</div>
+          <div>
+            <p className="eyebrow">Hermes</p>
+            <h1>Investment Intelligence</h1>
+          </div>
+        </div>
+        <nav className="nav-list" aria-label="Workspace sections">
+          <NavButton active={activeView === "radar"} label="Radar" detail="What deserves attention" onClick={() => setActiveView("radar")} />
+          <NavButton active={activeView === "inbox"} label="Inbox" detail={`${metrics.byStatus.inbox} open ideas`} onClick={() => setActiveView("inbox")} />
+          <NavButton active={activeView === "memo"} label="Memo" detail={selected?.title ?? "No item"} onClick={() => setActiveView("memo")} />
+          <NavButton active={activeView === "fit"} label="Portfolio Fit" detail={fit ? `${fit.score}/100` : "No score"} onClick={() => setActiveView("fit")} />
+          <NavButton active={activeView === "journal"} label="Journal" detail="Decision history" onClick={() => setActiveView("journal")} />
+          <NavButton active={activeView === "settings"} label="Settings" detail="Profile & data" onClick={() => setActiveView("settings")} />
+        </nav>
+        <div className="guardrail-card">
+          <p className="eyebrow">Boundary</p>
+          <p>Research support only. No financial advice, broker connection, or trade execution.</p>
+        </div>
+      </aside>
+
+      <section className="workspace">
+        <header className="hero-card">
+          <div>
+            <p className="eyebrow">Usable MVP v1</p>
+            <h2>Your investment research cockpit.</h2>
+            <p className="hero-copy">Capture themes, turn them into evidence-backed memos, check portfolio fit, and record human-owned decisions.</p>
+          </div>
+          <div className="hero-actions">
+            <button className="primary-button" onClick={() => setActiveView("inbox")}>Add research idea</button>
+            <button className="secondary-button" onClick={() => setActiveView("memo")}>Review active memo</button>
           </div>
         </header>
 
-        <section className="grid gap-5 lg:grid-cols-[0.95fr_1.45fr]">
-          <ProfileCard profile={profile} onChange={setProfile} />
-          <OperatingRules />
-        </section>
+        <div className="metric-grid">
+          <Metric label="Research items" value={metrics.total} />
+          <Metric label="Inbox" value={metrics.byStatus.inbox} />
+          <Metric label="Evidence" value={metrics.evidenceCount} />
+          <Metric label="Open questions" value={metrics.blockers} tone="warn" />
+        </div>
 
-        <PersistencePanel
-          exportJson={exportJson}
-          importDraft={importDraft}
-          importMessage={importMessage}
-          lastSavedAt={lastSavedAt}
-          saveStatus={saveStatus}
-          storageKey={INVESTMENT_STORAGE_KEY}
-          syncStatus={sync.lastSyncStatus}
-          onImport={importWorkspace}
-          onImportDraftChange={setImportDraft}
-          onReset={resetWorkspace}
-        />
-
-        <section className="grid gap-5 xl:grid-cols-[0.85fr_1.45fr_0.9fr]">
-          <div className="space-y-5">
-            <CapturePanel
-              draftAssetClass={draftAssetClass}
-              draftTheme={draftTheme}
-              draftTitle={draftTitle}
-              draftWhyNow={draftWhyNow}
-              onAdd={addResearchItem}
-              onAssetClassChange={setDraftAssetClass}
-              onThemeChange={setDraftTheme}
-              onTitleChange={setDraftTitle}
-              onWhyNowChange={setDraftWhyNow}
-            />
-            <LifecyclePanel items={items} selectedId={selected?.id ?? ""} onSelect={setSelectedId} />
-            <AgentIntakePanel agentInbox={agentInbox} draft={agentRequestDraft} onDraft={draftSelectedRequest} onDraftChange={setAgentRequestDraft} onQueue={queueAgentRequest} />
-          </div>
-
-          <div className="space-y-5">
-            {selected ? <ThesisWorkbench item={selected} update={updateSelected} /> : null}
-            {selected ? (
-              <EvidencePanel
-                item={selected}
-                sourceClaim={sourceClaim}
-                sourceTitle={sourceTitle}
-                sourceUrl={sourceUrl}
-                onAddEvidence={addEvidence}
-                onClaimChange={setSourceClaim}
-                onTitleChange={setSourceTitle}
-                onUrlChange={setSourceUrl}
-              />
-            ) : null}
-            {selected ? <DecisionJournal item={selected} rationale={decisionRationale} onCapture={captureDecisionSnapshot} onRationaleChange={setDecisionRationale} /> : null}
-          </div>
-
-          <div className="space-y-5">
-            {selected ? <PortfolioFit item={selected} profile={profile} /> : null}
-            <FrontierRadar signals={radarSignals} theme={radarTheme} signal={radarSignal} onAdd={addRadarSignal} onPromote={promoteRadarSignal} onSignalChange={setRadarSignal} onThemeChange={setRadarTheme} />
-          </div>
-        </section>
+        {activeView === "radar" ? <RadarView highestPriority={highestPriority} signals={radarSignals} theme={radarTheme} signal={radarSignal} onAdd={addRadarSignal} onPromote={promoteRadarSignal} onSignalChange={setRadarSignal} onThemeChange={setRadarTheme} onOpenMemo={() => setActiveView("memo")} /> : null}
+        {activeView === "inbox" ? <InboxView items={items} selectedId={selected?.id ?? ""} draftAssetClass={draftAssetClass} draftTheme={draftTheme} draftTitle={draftTitle} draftWhyNow={draftWhyNow} agentInbox={agentInbox} agentRequestDraft={agentRequestDraft} onAdd={addResearchItem} onAssetClassChange={setDraftAssetClass} onDraft={draftSelectedRequest} onAgentDraftChange={setAgentRequestDraft} onQueueAgent={queueAgentRequest} onSelect={setSelectedId} onThemeChange={setDraftTheme} onTitleChange={setDraftTitle} onWhyNowChange={setDraftWhyNow} /> : null}
+        {activeView === "memo" && selected ? <MemoView item={selected} update={updateSelected} sourceClaim={sourceClaim} sourceTitle={sourceTitle} sourceUrl={sourceUrl} onAddEvidence={addEvidence} onClaimChange={setSourceClaim} onTitleChange={setSourceTitle} onUrlChange={setSourceUrl} /> : null}
+        {activeView === "fit" && selected && fit ? <FitView item={selected} profile={profile} fit={fit} /> : null}
+        {activeView === "journal" && selected ? <JournalView item={selected} rationale={decisionRationale} onCapture={captureDecisionSnapshot} onRationaleChange={setDecisionRationale} /> : null}
+        {activeView === "settings" ? <SettingsView profile={profile} onProfileChange={setProfile} exportJson={exportJson} importDraft={importDraft} importMessage={importMessage} lastSavedAt={lastSavedAt} saveStatus={saveStatus} storageKey={INVESTMENT_STORAGE_KEY} syncStatus={sync.lastSyncStatus} onImport={importWorkspace} onImportDraftChange={setImportDraft} onReset={resetWorkspace} /> : null}
       </section>
+
+      <aside className="detail-rail">
+        {selected ? <ActiveResearchCard item={selected} onMemo={() => setActiveView("memo")} /> : null}
+        {selected && fit ? <FitSummary fit={fit} /> : null}
+        <ProfileSummary profile={profile} />
+      </aside>
     </main>
   );
 }
 
-function Metric({ label, value }: { label: string; value: number }) {
-  return <div className="rounded-2xl bg-white p-4"><p className="text-3xl font-semibold text-ink">{value}</p><p className="mt-1 text-sm font-medium text-muted">{label}</p></div>;
+function NavButton({ active, label, detail, onClick }: { active: boolean; label: string; detail: string; onClick: () => void }) {
+  return <button className={`nav-button ${active ? "is-active" : ""}`} onClick={onClick}><span>{label}</span><small>{detail}</small></button>;
 }
 
-function Panel({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
-  return <section className="rounded-[1.75rem] border border-line bg-panel p-5 shadow-soft"><div className="mb-5"><h2 className="text-xl font-semibold text-ink">{title}</h2>{subtitle ? <p className="mt-1 text-sm leading-6 text-muted">{subtitle}</p> : null}</div>{children}</section>;
+function Metric({ label, value, tone }: { label: string; value: number; tone?: "warn" }) {
+  return <div className={`metric-card ${tone === "warn" ? "is-warn" : ""}`}><strong>{value}</strong><span>{label}</span></div>;
+}
+
+function Panel({ title, subtitle, children, action }: { title: string; subtitle?: string; children: React.ReactNode; action?: React.ReactNode }) {
+  return <section className="panel"><div className="panel-header"><div><h3>{title}</h3>{subtitle ? <p>{subtitle}</p> : null}</div>{action}</div>{children}</section>;
 }
 
 function Input({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string }) {
-  return <label className="block"><span className="mb-1 block text-sm font-semibold text-slate-700">{label}</span><input className="focus-ring w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm" value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} /></label>;
+  return <label className="field"><span>{label}</span><input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} /></label>;
 }
 
-function Textarea({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string }) {
-  return <label className="block"><span className="mb-1 block text-sm font-semibold text-slate-700">{label}</span><textarea className="focus-ring min-h-24 w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm leading-6" value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} /></label>;
+function Textarea({ label, value, onChange, placeholder, rows = 4 }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; rows?: number }) {
+  return <label className="field"><span>{label}</span><textarea rows={rows} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} /></label>;
 }
 
 function Select<T extends string>({ label, value, onChange, options }: { label: string; value: T; onChange: (value: T) => void; options: { label: string; value: T }[] }) {
-  return <label className="block"><span className="mb-1 block text-sm font-semibold text-slate-700">{label}</span><select className="focus-ring w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm" value={value} onChange={(event) => onChange(event.target.value as T)}>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>;
+  return <label className="field"><span>{label}</span><select value={value} onChange={(event) => onChange(event.target.value as T)}>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>;
 }
 
-function ProfileCard({ profile, onChange }: { profile: InvestmentProfile; onChange: (profile: InvestmentProfile) => void }) {
-  return <Panel title="Investment Profile" subtitle="Personal constraints the agent must respect before suggesting research directions.">
-    <div className="grid gap-3 md:grid-cols-2">
-      <Select label="Risk level" value={profile.riskLevel} onChange={(riskLevel) => onChange({ ...profile, riskLevel })} options={["low", "moderate", "balanced", "high", "barbell"].map((value) => ({ label: value, value: value as InvestmentProfile["riskLevel"] }))} />
-      <Select label="Time horizon" value={profile.horizon} onChange={(horizon) => onChange({ ...profile, horizon })} options={["0-1y", "1-3y", "3-7y", "7y+"].map((value) => ({ label: value, value: value as InvestmentProfile["horizon"] }))} />
-      <Input label="Geography" value={profile.geography} onChange={(geography) => onChange({ ...profile, geography })} />
-      <Input label="Preferred assets" value={profile.preferredAssets.join(", ")} onChange={(value) => onChange({ ...profile, preferredAssets: splitCsv(value) })} />
-    </div>
-    <div className="mt-3 grid gap-3 md:grid-cols-2">
-      <Textarea label="Liquidity needs" value={profile.liquidityNeed} onChange={(liquidityNeed) => onChange({ ...profile, liquidityNeed })} />
-      <Textarea label="Exclusions / notes" value={profile.excludedAssets} onChange={(excludedAssets) => onChange({ ...profile, excludedAssets })} />
-    </div>
+function RadarView({ highestPriority, signals, theme, signal, onAdd, onPromote, onSignalChange, onThemeChange, onOpenMemo }: { highestPriority?: ResearchItem; signals: FrontierRadarSignal[]; theme: string; signal: string; onAdd: () => void; onPromote: (signal: FrontierRadarSignal) => void; onSignalChange: (value: string) => void; onThemeChange: (value: string) => void; onOpenMemo: () => void }) {
+  return <div className="view-grid two-col">
+    <Panel title="Today’s priority" subtitle="The strongest item to review next." action={<button className="secondary-button" onClick={onOpenMemo}>Open memo</button>}>
+      {highestPriority ? <div className="priority-card"><p className="tag">{highestPriority.theme}</p><h3>{highestPriority.title}</h3><p>{highestPriority.whyNow}</p><div className="checklist"><span>{highestPriority.sources.length} source(s)</span><span>{highestPriority.openQuestions.length} open question(s)</span><span>{highestPriority.confidence} confidence</span></div><strong>Next: {nextActionFor(highestPriority)}</strong></div> : <EmptyState text="No research items yet. Add your first idea from Inbox." />}
+    </Panel>
+    <Panel title="Frontier radar" subtitle="Signals you may want to promote into research.">
+      <div className="compact-form"><Input label="Theme" value={theme} onChange={onThemeChange} placeholder="e.g. Edge AI" /><Textarea label="Signal" value={signal} onChange={onSignalChange} placeholder="What changed, and why might it matter?" rows={3} /><button className="primary-button" onClick={onAdd}>Add signal</button></div>
+      <div className="card-list">{signals.map((item) => <article key={item.id} className="signal-card"><div><p className="tag">{item.urgency} urgency</p><h4>{item.theme}</h4></div><p>{item.signal}</p><p><strong>Next:</strong> {item.nextAction}</p><button className="secondary-button" onClick={() => onPromote(item)}>Promote to inbox</button></article>)}</div>
+    </Panel>
+  </div>;
+}
+
+function InboxView({ items, selectedId, draftAssetClass, draftTheme, draftTitle, draftWhyNow, agentInbox, agentRequestDraft, onAdd, onAssetClassChange, onDraft, onAgentDraftChange, onQueueAgent, onSelect, onThemeChange, onTitleChange, onWhyNowChange }: { items: ResearchItem[]; selectedId: string; draftAssetClass: string; draftTheme: string; draftTitle: string; draftWhyNow: string; agentInbox: AgentResearchRequest[]; agentRequestDraft: string; onAdd: () => void; onAssetClassChange: (value: string) => void; onDraft: (request: AgentResearchRequest) => void; onAgentDraftChange: (value: string) => void; onQueueAgent: () => void; onSelect: (id: string) => void; onThemeChange: (value: string) => void; onTitleChange: (value: string) => void; onWhyNowChange: (value: string) => void }) {
+  return <div className="view-grid two-col">
+    <Panel title="Capture an opportunity" subtitle="Add a theme, ticker, fund, or private opportunity in under 10 seconds.">
+      <div className="compact-form"><Input label="Title" value={draftTitle} onChange={onTitleChange} placeholder="e.g. Singapore REIT recovery basket" /><Input label="Theme" value={draftTheme} onChange={onThemeChange} placeholder="e.g. Rates / income" /><Input label="Asset class" value={draftAssetClass} onChange={onAssetClassChange} placeholder="ETF, stock, gold, bond, crypto..." /><Textarea label="Why now?" value={draftWhyNow} onChange={onWhyNowChange} placeholder="What signal made this worth attention?" /><button className="primary-button" onClick={onAdd}>Add to inbox</button></div>
+    </Panel>
+    <Panel title="Research queue" subtitle="Select one item to work on.">
+      <div className="research-list">{items.map((item) => <button key={item.id} onClick={() => onSelect(item.id)} className={`research-row ${selectedId === item.id ? "is-selected" : ""}`}><div><h4>{item.title}</h4><p>{item.assetClass} · {item.theme}</p></div><span>{statusLabels[item.status]}</span></button>)}</div>
+    </Panel>
+    <Panel title="Hermes research intake" subtitle="Queue an agent-style research request against the selected item.">
+      <div className="compact-form"><Textarea label="New research request" value={agentRequestDraft} onChange={onAgentDraftChange} placeholder="Research whether gold still fits my portfolio this quarter" rows={3} /><button className="secondary-button" onClick={onQueueAgent}>Queue request</button></div>
+      <div className="card-list">{agentInbox.map((request) => <article key={request.id} className="mini-card"><p className="tag">{request.channel} · {request.status}</p><h4>{request.rawRequest}</h4><p>{request.approvalNote}</p><button className="secondary-button" onClick={() => onDraft(request)}>Draft against selected item</button></article>)}</div>
+    </Panel>
+  </div>;
+}
+
+function MemoView({ item, update, sourceClaim, sourceTitle, sourceUrl, onAddEvidence, onClaimChange, onTitleChange, onUrlChange }: { item: ResearchItem; update: (patch: Partial<ResearchItem>) => void; sourceClaim: string; sourceTitle: string; sourceUrl: string; onAddEvidence: () => void; onClaimChange: (value: string) => void; onTitleChange: (value: string) => void; onUrlChange: (value: string) => void }) {
+  return <div className="view-grid memo-grid">
+    <Panel title="Active memo" subtitle="Turn a raw idea into a source-backed investment memo.">
+      <div className="memo-header"><div><p className="tag">{item.theme}</p><h3>{item.title}</h3></div><span className="status-pill">{statusLabels[item.status]}</span></div>
+      <div className="form-grid three"><Select label="Lifecycle" value={item.status} onChange={(status) => update({ status })} options={(Object.keys(statusLabels) as ResearchStatus[]).map((value) => ({ value, label: statusLabels[value] }))} /><Select label="Decision" value={item.decision} onChange={(decision) => update({ decision })} options={(Object.keys(decisionLabels) as Decision[]).map((value) => ({ value, label: decisionLabels[value] }))} /><Select label="Confidence" value={item.confidence} onChange={(confidence) => update({ confidence })} options={["low", "medium", "high"].map((value) => ({ value: value as ResearchItem["confidence"], label: value }))} /></div>
+      <div className="compact-form"><Input label="Title" value={item.title} onChange={(title) => update({ title })} /><Textarea label="Why this may matter now" value={item.whyNow} onChange={(whyNow) => update({ whyNow })} /><Textarea label="Thesis" value={item.thesis} onChange={(thesis) => update({ thesis })} /><Textarea label="Assumptions" value={item.assumptions.join("\n")} onChange={(value) => update({ assumptions: splitLines(value) })} /><Textarea label="Open questions" value={item.openQuestions.join("\n")} onChange={(value) => update({ openQuestions: splitLines(value) })} /><Textarea label="Key risks" value={item.risks.join("\n")} onChange={(value) => update({ risks: splitLines(value) })} /></div>
+    </Panel>
+    <Panel title="Evidence" subtitle="Every important claim needs a source.">
+      <div className="compact-form"><Input label="Source title" value={sourceTitle} onChange={onTitleChange} placeholder="Issuer factsheet, 10-K, fund page..." /><Input label="Source URL" value={sourceUrl} onChange={onUrlChange} placeholder="https://" /><Textarea label="Claim supported" value={sourceClaim} onChange={onClaimChange} placeholder="What does this source prove or challenge?" rows={3} /><button className="primary-button" onClick={onAddEvidence}>Attach evidence</button></div>
+      <div className="card-list">{item.sources.length === 0 ? <EmptyState text="No evidence yet. Do not finalize without sources." /> : item.sources.map((source) => <article key={source.id} className="mini-card"><p className="tag">{sourceTypeLabels[source.sourceType]} · {source.quality} · checked {source.checkedAt}</p><h4>{source.title}</h4><p>{source.claim}</p><a href={source.url} target="_blank" rel="noreferrer">Open source</a></article>)}</div>
+    </Panel>
+  </div>;
+}
+
+function FitView({ item, profile, fit }: { item: ResearchItem; profile: InvestmentProfile; fit: ReturnType<typeof scorePortfolioFit> }) {
+  return <Panel title="Portfolio fit engine" subtitle="Qualitative fit check before deeper analysis or any human decision.">
+    <div className="fit-score"><strong>{fit.score}</strong><span>/100 · {fit.label}</span></div>
+    <div className="fit-grid"><InfoTile label="Risk profile" value={profile.riskLevel} /><InfoTile label="Time horizon" value={profile.horizon} /><InfoTile label="Asset class" value={item.assetClass} /><InfoTile label="Evidence count" value={String(item.sources.length)} /></div>
+    <div className="insight-box"><h4>Interpretation</h4><p>{item.fitNotes}</p></div>
+    {fit.blockers.length > 0 ? <div className="warning-box"><h4>Blockers</h4><ul>{fit.blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul></div> : null}
+    <div className="warning-box"><h4>Before action</h4><p>{fit.nextCheck} This app never executes trades.</p></div>
   </Panel>;
 }
 
-function OperatingRules() {
-  return <Panel title="Operating Rules" subtitle="Guardrails for a trusted investment research OS.">
-    <div className="grid gap-3 md:grid-cols-2">
-      {["Research support only — not licensed financial advice.", "No broker connection or trade execution in this MVP.", "Every memo must show facts, assumptions, risks, and sources.", "Investment decisions remain human-owned and approval-gated.", "Agent outputs start as drafts awaiting review.", "Never store credentials, account numbers, seed phrases, or private keys."].map((rule) => <div key={rule} className="rounded-2xl border border-line bg-slate-50 p-4 text-sm font-medium leading-6 text-slate-700">{rule}</div>)}
-    </div>
+function JournalView({ item, rationale, onCapture, onRationaleChange }: { item: ResearchItem; rationale: string; onCapture: () => void; onRationaleChange: (value: string) => void }) {
+  return <Panel title="Decision journal" subtitle="Record why a decision state exists. This is not a trade instruction.">
+    <div className="compact-form"><Textarea label="Human rationale" value={rationale} onChange={onRationaleChange} placeholder="Why is this decision state being captured now?" /><button className="primary-button" onClick={onCapture}>Capture snapshot</button></div>
+    <div className="card-list">{item.decisionSnapshots.length === 0 ? <EmptyState text="No snapshots yet." /> : item.decisionSnapshots.map((snapshot) => <article key={snapshot.id} className="mini-card"><p className="tag">{new Date(snapshot.createdAt).toLocaleString()}</p><h4>{decisionLabels[snapshot.decision]} · {snapshot.confidence}</h4><p>{snapshot.humanRationale}</p><p><strong>{snapshot.actionBoundary}</strong></p></article>)}</div>
   </Panel>;
 }
 
-function PersistencePanel({ exportJson, importDraft, importMessage, lastSavedAt, saveStatus, storageKey, syncStatus, onImport, onImportDraftChange, onReset }: { exportJson: string; importDraft: string; importMessage: string; lastSavedAt: string; saveStatus: string; storageKey: string; syncStatus: string; onImport: () => void; onImportDraftChange: (value: string) => void; onReset: () => void; }) {
-  return <Panel title="Cloud-ready Persistence" subtitle="Phase 3: browser-local storage now uses a server-ready schema with import/export migration. No cloud credentials are connected yet.">
-    <div className="grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
-      <div className="space-y-3 rounded-2xl border border-line bg-slate-50 p-4 text-sm leading-6 text-slate-700">
-        <p><span className="font-semibold text-ink">Status:</span> {saveStatus}</p>
-        <p><span className="font-semibold text-ink">Sync contract:</span> {syncStatus}</p>
-        <p><span className="font-semibold text-ink">Last saved:</span> {new Date(lastSavedAt).toLocaleString()}</p>
-        <p><span className="font-semibold text-ink">Storage key:</span> <span className="break-all">{storageKey}</span></p>
-        <p className="text-amber-900">Cloud-ready only. Supabase/Vercel env changes remain separate deployment work.</p>
-        <button className="focus-ring rounded-2xl border border-red-200 bg-white px-4 py-3 font-semibold text-red-700 transition hover:bg-red-50" onClick={onReset}>Reset local workspace</button>
-      </div>
-      <div className="grid gap-4 md:grid-cols-2">
-        <label className="block"><span className="mb-1 block text-sm font-semibold text-slate-700">Export Phase 3 JSON</span><textarea className="focus-ring min-h-48 w-full rounded-2xl border border-line bg-white px-4 py-3 font-mono text-xs leading-5" value={exportJson} readOnly /></label>
-        <div className="space-y-3"><Textarea label="Import Phase 2/3 JSON" value={importDraft} onChange={onImportDraftChange} placeholder="Paste workspace export here" /><button className="focus-ring rounded-2xl bg-ink px-4 py-3 font-semibold text-white transition hover:bg-slate-700" onClick={onImport}>Import workspace</button>{importMessage ? <p className="rounded-2xl bg-blue-50 p-4 text-sm font-semibold text-blue-950">{importMessage}</p> : null}</div>
-      </div>
-    </div>
-  </Panel>;
+function SettingsView({ profile, onProfileChange, exportJson, importDraft, importMessage, lastSavedAt, saveStatus, storageKey, syncStatus, onImport, onImportDraftChange, onReset }: { profile: InvestmentProfile; onProfileChange: (profile: InvestmentProfile) => void; exportJson: string; importDraft: string; importMessage: string; lastSavedAt: string; saveStatus: string; storageKey: string; syncStatus: string; onImport: () => void; onImportDraftChange: (value: string) => void; onReset: () => void; }) {
+  return <div className="view-grid two-col">
+    <Panel title="Investment profile" subtitle="Constraints the app should respect before suggesting research directions.">
+      <div className="form-grid two"><Select label="Risk level" value={profile.riskLevel} onChange={(riskLevel) => onProfileChange({ ...profile, riskLevel })} options={["low", "moderate", "balanced", "high", "barbell"].map((value) => ({ label: value, value: value as InvestmentProfile["riskLevel"] }))} /><Select label="Time horizon" value={profile.horizon} onChange={(horizon) => onProfileChange({ ...profile, horizon })} options={["0-1y", "1-3y", "3-7y", "7y+"].map((value) => ({ label: value, value: value as InvestmentProfile["horizon"] }))} /><Input label="Geography" value={profile.geography} onChange={(geography) => onProfileChange({ ...profile, geography })} /><Input label="Preferred assets" value={profile.preferredAssets.join(", ")} onChange={(value) => onProfileChange({ ...profile, preferredAssets: splitCsv(value) })} /></div>
+      <div className="form-grid two"><Textarea label="Liquidity needs" value={profile.liquidityNeed} onChange={(liquidityNeed) => onProfileChange({ ...profile, liquidityNeed })} /><Textarea label="Exclusions / notes" value={profile.excludedAssets} onChange={(excludedAssets) => onProfileChange({ ...profile, excludedAssets })} /></div>
+    </Panel>
+    <Panel title="Data & backup" subtitle="Debug/import/export moved here so the main workflow stays clean.">
+      <div className="settings-status"><p><strong>Status:</strong> {saveStatus}</p><p><strong>Sync:</strong> {syncStatus}</p><p><strong>Last saved:</strong> {new Date(lastSavedAt).toLocaleString()}</p><p><strong>Storage key:</strong> {storageKey}</p></div>
+      <details className="backup-details"><summary>Export / import workspace JSON</summary><Textarea label="Export JSON" value={exportJson} onChange={() => undefined} rows={8} /><Textarea label="Import JSON" value={importDraft} onChange={onImportDraftChange} placeholder="Paste workspace export here" rows={6} /><div className="button-row"><button className="secondary-button" onClick={onImport}>Import workspace</button><button className="danger-button" onClick={onReset}>Reset local workspace</button></div>{importMessage ? <p className="notice">{importMessage}</p> : null}</details>
+    </Panel>
+  </div>;
 }
 
-function CapturePanel({ draftAssetClass, draftTheme, draftTitle, draftWhyNow, onAdd, onAssetClassChange, onThemeChange, onTitleChange, onWhyNowChange }: { draftAssetClass: string; draftTheme: string; draftTitle: string; draftWhyNow: string; onAdd: () => void; onAssetClassChange: (value: string) => void; onThemeChange: (value: string) => void; onTitleChange: (value: string) => void; onWhyNowChange: (value: string) => void; }) {
-  return <Panel title="Capture opportunity" subtitle="Add a theme, ticker, asset, fund, or private opportunity for research.">
-    <div className="space-y-3"><Input label="Title" value={draftTitle} onChange={onTitleChange} placeholder="e.g. Singapore REIT recovery basket" /><Input label="Theme" value={draftTheme} onChange={onThemeChange} placeholder="e.g. Rates / income" /><Input label="Asset class" value={draftAssetClass} onChange={onAssetClassChange} placeholder="ETF, stock, gold, bond, crypto..." /><Textarea label="Why now?" value={draftWhyNow} onChange={onWhyNowChange} placeholder="What signal made this worth attention?" /><button className="focus-ring w-full rounded-2xl bg-ink px-4 py-3 font-semibold text-white transition hover:bg-slate-700" onClick={onAdd}>Add to Research Inbox</button></div>
-  </Panel>;
+function ActiveResearchCard({ item, onMemo }: { item: ResearchItem; onMemo: () => void }) {
+  return <section className="rail-card"><p className="eyebrow">Active research</p><h3>{item.title}</h3><p>{item.theme} · {item.assetClass}</p><div className="rail-stats"><span>{item.sources.length} sources</span><span>{item.openQuestions.length} questions</span></div><p className="next-action">{nextActionFor(item)}</p><button className="secondary-button" onClick={onMemo}>Open memo</button></section>;
 }
 
-function LifecyclePanel({ items, selectedId, onSelect }: { items: ResearchItem[]; selectedId: string; onSelect: (id: string) => void }) {
-  return <Panel title="Opportunity lifecycle" subtitle="Move ideas from inbox to memo to decision.">
-    <div className="space-y-2">{items.map((item) => <button key={item.id} onClick={() => onSelect(item.id)} className={`focus-ring w-full rounded-2xl border p-4 text-left transition ${selectedId === item.id ? "border-accent bg-blue-50" : "border-line bg-white hover:border-slate-300"}`}><div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-ink">{item.title}</p><p className="mt-1 text-sm text-muted">{item.assetClass} · {item.theme}</p></div><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">{statusLabels[item.status]}</span></div></button>)}</div>
-  </Panel>;
+function FitSummary({ fit }: { fit: ReturnType<typeof scorePortfolioFit> }) {
+  return <section className="rail-card"><p className="eyebrow">Fit score</p><div className="rail-score"><strong>{fit.score}</strong><span>{fit.label}</span></div>{fit.blockers.length > 0 ? <p>{fit.blockers.length} blocker(s) before review.</p> : <p>No major qualitative blockers flagged.</p>}</section>;
 }
 
-function AgentIntakePanel({ agentInbox, draft, onDraft, onDraftChange, onQueue }: { agentInbox: AgentResearchRequest[]; draft: string; onDraft: (request: AgentResearchRequest) => void; onDraftChange: (value: string) => void; onQueue: () => void; }) {
-  return <Panel title="Hermes Research Intake" subtitle="Phase 4: local app contract for Telegram/Hermes requests. Draft only; human review required.">
-    <div className="space-y-3"><Textarea label="New research request" value={draft} onChange={onDraftChange} placeholder="e.g. Research whether gold still fits my portfolio this quarter" /><button className="focus-ring rounded-2xl bg-accent px-4 py-3 font-semibold text-white transition hover:bg-blue-700" onClick={onQueue}>Queue request</button></div>
-    <div className="mt-5 space-y-3">{agentInbox.map((request) => <div key={request.id} className="rounded-2xl border border-line bg-slate-50 p-4"><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{request.channel} · {request.status}</p><p className="mt-2 font-semibold text-ink">{request.rawRequest}</p><p className="mt-2 text-sm leading-6 text-muted">{request.approvalNote}</p><button className="focus-ring mt-3 rounded-2xl border border-line bg-white px-3 py-2 text-sm font-semibold text-ink" onClick={() => onDraft(request)}>Draft against selected item</button></div>)}</div>
-  </Panel>;
+function ProfileSummary({ profile }: { profile: InvestmentProfile }) {
+  return <section className="rail-card"><p className="eyebrow">Profile</p><h3>{profile.riskLevel} · {profile.horizon}</h3><p>{profile.geography}</p><p>{profile.preferredAssets.join(" · ")}</p></section>;
 }
 
-function ThesisWorkbench({ item, update }: { item: ResearchItem; update: (patch: Partial<ResearchItem>) => void }) {
-  return <Panel title="Thesis Workbench" subtitle="Structured memo draft for the selected opportunity.">
-    <div className="grid gap-3 md:grid-cols-3"><Select label="Lifecycle" value={item.status} onChange={(status) => update({ status })} options={(Object.keys(statusLabels) as ResearchStatus[]).map((value) => ({ value, label: statusLabels[value] }))} /><Select label="Decision option" value={item.decision} onChange={(decision) => update({ decision })} options={(Object.keys(decisionLabels) as Decision[]).map((value) => ({ value, label: decisionLabels[value] }))} /><Select label="Confidence" value={item.confidence} onChange={(confidence) => update({ confidence })} options={["low", "medium", "high"].map((value) => ({ value: value as ResearchItem["confidence"], label: value }))} /></div>
-    <div className="mt-4 space-y-3"><Input label="Title" value={item.title} onChange={(title) => update({ title })} /><Textarea label="Why this may matter now" value={item.whyNow} onChange={(whyNow) => update({ whyNow })} /><Textarea label="Thesis" value={item.thesis} onChange={(thesis) => update({ thesis })} /><Textarea label="Assumptions" value={item.assumptions.join("\n")} onChange={(value) => update({ assumptions: splitLines(value) })} /><Textarea label="Open questions" value={item.openQuestions.join("\n")} onChange={(value) => update({ openQuestions: splitLines(value) })} /><Textarea label="Key risks" value={item.risks.join("\n")} onChange={(value) => update({ risks: splitLines(value) })} /><Input label="Target allocation boundary" value={item.targetAllocation} onChange={(targetAllocation) => update({ targetAllocation })} /><Input label="Review cadence" value={item.reviewCadence} onChange={(reviewCadence) => update({ reviewCadence })} /><Input label="Next review date" value={item.nextReviewAt} onChange={(nextReviewAt) => update({ nextReviewAt })} /><Textarea label="Portfolio fit notes" value={item.fitNotes} onChange={(fitNotes) => update({ fitNotes })} /></div>
-    {item.agentDrafts.length > 0 ? <div className="mt-5 space-y-3"><h3 className="font-semibold text-ink">Agent draft queue</h3>{item.agentDrafts.map((draft) => <div key={draft.id} className="rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm leading-6 text-blue-950"><p className="font-semibold">{draft.request}</p><p className="mt-2">Next: {draft.suggestedNextStep}</p><p className="mt-2 font-semibold">Human review required: {draft.humanReviewRequired ? "yes" : "no"}</p></div>)}</div> : null}
-  </Panel>;
+function InfoTile({ label, value }: { label: string; value: string }) {
+  return <div className="info-tile"><span>{label}</span><strong>{value}</strong></div>;
 }
 
-function EvidencePanel({ item, sourceClaim, sourceTitle, sourceUrl, onAddEvidence, onClaimChange, onTitleChange, onUrlChange }: { item: ResearchItem; sourceClaim: string; sourceTitle: string; sourceUrl: string; onAddEvidence: () => void; onClaimChange: (value: string) => void; onTitleChange: (value: string) => void; onUrlChange: (value: string) => void; }) {
-  return <Panel title="Evidence Library" subtitle="Every claim should have a source, date, and quality level.">
-    <div className="space-y-3"><Input label="Source title" value={sourceTitle} onChange={onTitleChange} placeholder="Issuer factsheet, 10-K, fund page..." /><Input label="Source URL" value={sourceUrl} onChange={onUrlChange} placeholder="https://" /><Textarea label="Claim supported" value={sourceClaim} onChange={onClaimChange} placeholder="What does this source prove or challenge?" /><button className="focus-ring rounded-2xl bg-accent px-4 py-3 font-semibold text-white transition hover:bg-blue-700" onClick={onAddEvidence}>Attach evidence</button></div>
-    <div className="mt-5 space-y-3">{item.sources.length === 0 ? <p className="rounded-2xl bg-amber-50 p-4 text-sm text-amber-900">No evidence attached yet. Do not finalize a memo without sources.</p> : item.sources.map((source) => <div key={source.id} className="rounded-2xl border border-line bg-slate-50 p-4"><div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-600"><span>{sourceTypeLabels[source.sourceType]}</span><span>·</span><span>{source.quality} quality</span><span>·</span><span>checked {source.checkedAt}</span></div><p className="mt-2 font-semibold text-ink">{source.title}</p><p className="mt-2 text-sm leading-6 text-muted">{source.claim}</p><a className="mt-2 inline-block break-all text-sm font-semibold text-accent" href={source.url} target="_blank" rel="noreferrer">{source.url}</a></div>)}</div>
-  </Panel>;
-}
-
-function PortfolioFit({ item, profile }: { item: ResearchItem; profile: InvestmentProfile }) {
-  const fit = scorePortfolioFit(item, profile);
-  return <Panel title="Portfolio Fit Engine" subtitle="Phase 5: qualitative fit check before deeper analysis.">
-    <div className="space-y-3 text-sm leading-6"><FitRow label="Score" value={`${fit.score}/100 · ${fit.label}`} /><FitRow label="Risk profile" value={profile.riskLevel} /><FitRow label="Time horizon" value={profile.horizon} /><FitRow label="Asset class" value={item.assetClass} /><div className="rounded-2xl bg-blue-50 p-4 text-blue-950"><p className="font-semibold">Fit interpretation</p><p className="mt-1">{item.fitNotes}</p></div>{fit.blockers.length > 0 ? <div className="rounded-2xl bg-amber-50 p-4 text-amber-950"><p className="font-semibold">Blockers</p><ul className="mt-1 list-disc pl-5">{fit.blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul></div> : null}<div className="rounded-2xl bg-amber-50 p-4 text-amber-950"><p className="font-semibold">Before action</p><p className="mt-1">{fit.nextCheck} Do not execute trades from this app.</p></div></div>
-  </Panel>;
-}
-
-function FitRow({ label, value }: { label: string; value: string }) {
-  return <div className="flex items-center justify-between gap-4 rounded-2xl border border-line bg-white p-3"><span className="font-semibold text-slate-600">{label}</span><span className="text-right font-semibold text-ink">{value}</span></div>;
-}
-
-function FrontierRadar({ signals, theme, signal, onAdd, onPromote, onSignalChange, onThemeChange }: { signals: FrontierRadarSignal[]; theme: string; signal: string; onAdd: () => void; onPromote: (signal: FrontierRadarSignal) => void; onSignalChange: (value: string) => void; onThemeChange: (value: string) => void; }) {
-  return <Panel title="Frontier Radar" subtitle="Phase 5: recurring theme signals that can be promoted into the research inbox.">
-    <div className="space-y-3"><Input label="Theme" value={theme} onChange={onThemeChange} placeholder="e.g. Edge AI" /><Textarea label="Signal" value={signal} onChange={onSignalChange} placeholder="What changed, and why might it matter?" /><button className="focus-ring rounded-2xl bg-ink px-4 py-3 font-semibold text-white transition hover:bg-slate-700" onClick={onAdd}>Add radar signal</button></div>
-    <div className="mt-5 space-y-3">{signals.map((item) => <div key={item.id} className="rounded-2xl border border-line bg-white p-4"><div className="flex items-center justify-between gap-3"><p className="font-semibold text-ink">{item.theme}</p><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">{item.urgency}</span></div><p className="mt-2 text-sm leading-6 text-muted">{item.signal}</p><p className="mt-2 text-sm leading-6 text-slate-700"><span className="font-semibold">Next:</span> {item.nextAction}</p><button className="focus-ring mt-3 rounded-2xl border border-line bg-slate-50 px-3 py-2 text-sm font-semibold text-ink" onClick={() => onPromote(item)}>Promote to inbox</button></div>)}</div>
-  </Panel>;
-}
-
-function DecisionJournal({ item, rationale, onCapture, onRationaleChange }: { item: ResearchItem; rationale: string; onCapture: () => void; onRationaleChange: (value: string) => void; }) {
-  return <Panel title="Decision Journal" subtitle="Immutable-style accountability snapshots. Records research decisions, not trade instructions.">
-    <div className="space-y-3"><Textarea label="Human rationale" value={rationale} onChange={onRationaleChange} placeholder="Why this decision state is being captured now" /><button className="focus-ring rounded-2xl bg-ink px-4 py-3 font-semibold text-white transition hover:bg-slate-700" onClick={onCapture}>Capture decision snapshot</button></div>
-    <div className="mt-5 space-y-3">{item.decisionSnapshots.length === 0 ? <p className="rounded-2xl bg-slate-50 p-4 text-sm text-muted">No snapshots yet.</p> : item.decisionSnapshots.map((snapshot) => <div key={snapshot.id} className="rounded-2xl border border-line bg-slate-50 p-4 text-sm leading-6"><p className="font-semibold text-ink">{snapshot.decision} · {snapshot.confidence}</p><p className="mt-1 text-muted">{snapshot.humanRationale}</p><p className="mt-2 font-semibold text-amber-900">{snapshot.actionBoundary}</p></div>)}</div>
-  </Panel>;
+function EmptyState({ text }: { text: string }) {
+  return <div className="empty-state">{text}</div>;
 }
