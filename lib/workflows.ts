@@ -42,6 +42,98 @@ export function createAgentDraftFromRequest(request: AgentResearchRequest, item:
   };
 }
 
+export function createStructuredMemoDraft(title: string, theme: string, assetClass: string, whyNow: string): ResearchItem {
+  const cleanedTitle = title.trim() || "Untitled research idea";
+  const cleanedTheme = theme.trim() || "Unclassified theme";
+  const cleanedAssetClass = assetClass.trim() || "Unknown";
+  const cleanedWhyNow = whyNow.trim() || "Timing signal needs to be clarified with evidence.";
+
+  return {
+    id: `research-${Date.now()}`,
+    title: cleanedTitle,
+    assetClass: cleanedAssetClass,
+    theme: cleanedTheme,
+    status: "memo",
+    whyNow: cleanedWhyNow,
+    thesis: `${cleanedTitle} may be worth researching because ${cleanedWhyNow.toLowerCase()}. Treat this as a draft thesis until source evidence confirms or challenges it.`,
+    assumptions: [
+      "The timing signal is material rather than noise.",
+      "There is an investable vehicle that maps cleanly to the theme.",
+      "The opportunity can fit the portfolio without creating excessive concentration or liquidity risk."
+    ],
+    openQuestions: [
+      "Which primary or high-quality sources support this thesis?",
+      "Which evidence would disconfirm this thesis?",
+      "How does this affect concentration, liquidity, currency exposure, and downside risk?"
+    ],
+    risks: ["Evidence gap", "Valuation or timing risk", "Portfolio concentration risk"],
+    fitNotes: "Fit is provisional. Validate against risk level, time horizon, liquidity needs, geography, and excluded assets.",
+    decision: "research_deeper",
+    confidence: "low",
+    targetAllocation: "Research only; no allocation proposed.",
+    reviewCadence: "Manual review after evidence is attached",
+    nextReviewAt: today(),
+    createdAt: today(),
+    sources: [],
+    agentDrafts: [],
+    decisionSnapshots: []
+  };
+}
+
+export function evaluateMemoTrust(item: ResearchItem) {
+  const missingEvidence: string[] = [];
+  const warnings: string[] = [];
+  let score = 100;
+
+  const placeholderSources = item.sources.filter((source) => source.url.includes("example.com") || source.url.includes("replace-with"));
+  const highQualitySources = item.sources.filter((source) => source.quality === "high" || source.sourceType === "issuer" || source.sourceType === "filing" || source.sourceType === "regulator");
+
+  if (item.sources.length === 0) {
+    score -= 35;
+    missingEvidence.push("Attach at least two sources before decision capture.");
+  } else if (item.sources.length === 1) {
+    score -= 15;
+    missingEvidence.push("Add a second independent source before decision capture.");
+  }
+
+  if (placeholderSources.length > 0) {
+    score -= 25;
+    warnings.push("Replace placeholder source URLs with real primary or high-quality sources.");
+  }
+
+  if (highQualitySources.length === 0) {
+    score -= 15;
+    missingEvidence.push("Add at least one primary/high-quality source such as issuer, filing, regulator, or market-data evidence.");
+  }
+
+  if (item.openQuestions.length > 0) {
+    score -= Math.min(25, item.openQuestions.length * 8);
+    missingEvidence.push("Resolve open questions before decision capture.");
+  }
+
+  if (item.risks.length < 2) {
+    score -= 12;
+    warnings.push("Document at least two concrete risks before trusting this memo.");
+  }
+
+  if (!item.thesis.trim() || item.thesis.toLowerCase().includes("pending")) {
+    score -= 12;
+    warnings.push("Replace placeholder thesis with a clear, falsifiable thesis.");
+  }
+
+  const bounded = Math.max(0, Math.min(100, score));
+  const decisionReady = bounded >= 80 && missingEvidence.length === 0 && warnings.length === 0;
+
+  return {
+    score: bounded,
+    label: decisionReady ? "Decision-ready draft" : bounded >= 60 ? "Review required" : "Needs evidence",
+    decisionReady,
+    missingEvidence,
+    warnings,
+    requiredNextStep: decisionReady ? "Human can capture a decision snapshot if rationale is clear." : (missingEvidence[0] || warnings[0] || "Review memo quality before decision capture."),
+  };
+}
+
 export function scorePortfolioFit(item: ResearchItem, profile: InvestmentProfile) {
   let score = 55;
   const lowerAsset = item.assetClass.toLowerCase();

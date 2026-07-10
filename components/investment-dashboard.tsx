@@ -15,6 +15,8 @@ import {
   createDecisionSnapshot,
   createRadarSignal,
   createResearchRequest,
+  createStructuredMemoDraft,
+  evaluateMemoTrust,
   scorePortfolioFit,
 } from "@/lib/workflows";
 import type { AgentResearchRequest, Decision, EvidenceSource, FrontierRadarSignal, InvestmentAppState, InvestmentProfile, ResearchItem, ResearchStatus } from "@/lib/types";
@@ -153,28 +155,7 @@ export default function InvestmentDashboard() {
 
   function addResearchItem() {
     if (!draftTitle.trim()) return;
-    const next: ResearchItem = {
-      id: uid("research"),
-      title: draftTitle.trim(),
-      assetClass: draftAssetClass.trim() || "Unknown",
-      theme: draftTheme.trim() || "Unclassified",
-      status: "inbox",
-      whyNow: draftWhyNow.trim() || "Needs evidence and timing research.",
-      thesis: "Draft thesis pending. Use the agent or add evidence before decision.",
-      assumptions: [],
-      openQuestions: ["What source-backed evidence supports this?", "How does this change portfolio concentration and liquidity?"],
-      risks: ["Evidence incomplete", "Portfolio fit not yet verified"],
-      fitNotes: "Pending profile-fit analysis.",
-      decision: "watch",
-      confidence: "low",
-      targetAllocation: "Research only; no allocation proposed.",
-      reviewCadence: "Manual review",
-      nextReviewAt: today(),
-      createdAt: today(),
-      sources: [],
-      agentDrafts: [],
-      decisionSnapshots: []
-    };
+    const next = createStructuredMemoDraft(draftTitle, draftTheme, draftAssetClass, draftWhyNow);
     setItems((current) => [next, ...current]);
     setSelectedId(next.id);
     setActiveView("memo");
@@ -293,6 +274,7 @@ export default function InvestmentDashboard() {
   }
 
   const fit = selected ? scorePortfolioFit(selected, profile) : null;
+  const trust = selected ? evaluateMemoTrust(selected) : null;
 
   return (
     <main className="app-shell">
@@ -309,7 +291,7 @@ export default function InvestmentDashboard() {
           <NavButton active={activeView === "inbox"} label="Inbox" detail={`${metrics.byStatus.inbox} open ideas`} onClick={() => setActiveView("inbox")} />
           <NavButton active={activeView === "memo"} label="Memo" detail={selected?.title ?? "No item"} onClick={() => setActiveView("memo")} />
           <NavButton active={activeView === "fit"} label="Portfolio Fit" detail={fit ? `${fit.score}/100` : "No score"} onClick={() => setActiveView("fit")} />
-          <NavButton active={activeView === "journal"} label="Journal" detail="Decision history" onClick={() => setActiveView("journal")} />
+          <NavButton active={activeView === "journal"} label="Journal" detail={trust?.decisionReady ? "Decision-ready" : "Needs trust checks"} onClick={() => setActiveView("journal")} />
           <NavButton active={activeView === "settings"} label="Settings" detail="Profile & data" onClick={() => setActiveView("settings")} />
         </nav>
         <div className="guardrail-card">
@@ -321,9 +303,9 @@ export default function InvestmentDashboard() {
       <section className="workspace">
         <header className="hero-card">
           <div>
-            <p className="eyebrow">Usable MVP v1</p>
-            <h2>Your investment research cockpit.</h2>
-            <p className="hero-copy">Capture themes, turn them into evidence-backed memos, check portfolio fit, and record human-owned decisions.</p>
+            <p className="eyebrow">Trust MVP v2</p>
+            <h2>Your evidence-first investment cockpit.</h2>
+            <p className="hero-copy">Capture themes, generate structured memos, expose missing evidence, check portfolio fit, and record human-owned decisions.</p>
           </div>
           <div className="hero-actions">
             <button className="primary-button" onClick={() => setActiveView("inbox")}>Add research idea</button>
@@ -335,7 +317,7 @@ export default function InvestmentDashboard() {
           <Metric label="Research items" value={metrics.total} />
           <Metric label="Inbox" value={metrics.byStatus.inbox} />
           <Metric label="Evidence" value={metrics.evidenceCount} />
-          <Metric label="Open questions" value={metrics.blockers} tone="warn" />
+          <Metric label="Trust score" value={trust?.score ?? 0} tone={trust?.decisionReady ? undefined : "warn"} />
         </div>
 
         {activeView === "radar" ? <RadarView highestPriority={highestPriority} signals={radarSignals} theme={radarTheme} signal={radarSignal} onAdd={addRadarSignal} onPromote={promoteRadarSignal} onSignalChange={setRadarSignal} onThemeChange={setRadarTheme} onOpenMemo={() => setActiveView("memo")} /> : null}
@@ -348,6 +330,7 @@ export default function InvestmentDashboard() {
 
       <aside className="detail-rail">
         {selected ? <ActiveResearchCard item={selected} onMemo={() => setActiveView("memo")} /> : null}
+        {trust ? <TrustSummary trust={trust} /> : null}
         {selected && fit ? <FitSummary fit={fit} /> : null}
         <ProfileSummary profile={profile} />
       </aside>
@@ -407,8 +390,10 @@ function InboxView({ items, selectedId, draftAssetClass, draftTheme, draftTitle,
 }
 
 function MemoView({ item, update, sourceClaim, sourceTitle, sourceUrl, onAddEvidence, onClaimChange, onTitleChange, onUrlChange }: { item: ResearchItem; update: (patch: Partial<ResearchItem>) => void; sourceClaim: string; sourceTitle: string; sourceUrl: string; onAddEvidence: () => void; onClaimChange: (value: string) => void; onTitleChange: (value: string) => void; onUrlChange: (value: string) => void }) {
+  const trust = evaluateMemoTrust(item);
   return <div className="view-grid memo-grid">
     <Panel title="Active memo" subtitle="Turn a raw idea into a source-backed investment memo.">
+      <TrustStatus trust={trust} />
       <div className="memo-header"><div><p className="tag">{item.theme}</p><h3>{item.title}</h3></div><span className="status-pill">{statusLabels[item.status]}</span></div>
       <div className="form-grid three"><Select label="Lifecycle" value={item.status} onChange={(status) => update({ status })} options={(Object.keys(statusLabels) as ResearchStatus[]).map((value) => ({ value, label: statusLabels[value] }))} /><Select label="Decision" value={item.decision} onChange={(decision) => update({ decision })} options={(Object.keys(decisionLabels) as Decision[]).map((value) => ({ value, label: decisionLabels[value] }))} /><Select label="Confidence" value={item.confidence} onChange={(confidence) => update({ confidence })} options={["low", "medium", "high"].map((value) => ({ value: value as ResearchItem["confidence"], label: value }))} /></div>
       <div className="compact-form"><Input label="Title" value={item.title} onChange={(title) => update({ title })} /><Textarea label="Why this may matter now" value={item.whyNow} onChange={(whyNow) => update({ whyNow })} /><Textarea label="Thesis" value={item.thesis} onChange={(thesis) => update({ thesis })} /><Textarea label="Assumptions" value={item.assumptions.join("\n")} onChange={(value) => update({ assumptions: splitLines(value) })} /><Textarea label="Open questions" value={item.openQuestions.join("\n")} onChange={(value) => update({ openQuestions: splitLines(value) })} /><Textarea label="Key risks" value={item.risks.join("\n")} onChange={(value) => update({ risks: splitLines(value) })} /></div>
@@ -420,10 +405,20 @@ function MemoView({ item, update, sourceClaim, sourceTitle, sourceUrl, onAddEvid
   </div>;
 }
 
+function TrustStatus({ trust }: { trust: ReturnType<typeof evaluateMemoTrust> }) {
+  const issues = [...trust.missingEvidence, ...trust.warnings];
+  return <div className={`trust-panel ${trust.decisionReady ? "is-ready" : "is-blocked"}`}>
+    <div><p className="eyebrow">Trust status</p><h4>{trust.score}/100 · {trust.label}</h4></div>
+    <p>{trust.requiredNextStep}</p>
+    {issues.length > 0 ? <ul>{issues.map((issue) => <li key={issue}>{issue}</li>)}</ul> : <p className="ready-copy">Evidence, risks, and questions are clean enough for human decision review.</p>}
+  </div>;
+}
+
 function FitView({ item, profile, fit }: { item: ResearchItem; profile: InvestmentProfile; fit: ReturnType<typeof scorePortfolioFit> }) {
+  const trust = evaluateMemoTrust(item);
   return <Panel title="Portfolio fit engine" subtitle="Qualitative fit check before deeper analysis or any human decision.">
     <div className="fit-score"><strong>{fit.score}</strong><span>/100 · {fit.label}</span></div>
-    <div className="fit-grid"><InfoTile label="Risk profile" value={profile.riskLevel} /><InfoTile label="Time horizon" value={profile.horizon} /><InfoTile label="Asset class" value={item.assetClass} /><InfoTile label="Evidence count" value={String(item.sources.length)} /></div>
+    <div className="fit-grid"><InfoTile label="Risk profile" value={profile.riskLevel} /><InfoTile label="Time horizon" value={profile.horizon} /><InfoTile label="Asset class" value={item.assetClass} /><InfoTile label="Trust score" value={`${trust.score}/100`} /></div>
     <div className="insight-box"><h4>Interpretation</h4><p>{item.fitNotes}</p></div>
     {fit.blockers.length > 0 ? <div className="warning-box"><h4>Blockers</h4><ul>{fit.blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul></div> : null}
     <div className="warning-box"><h4>Before action</h4><p>{fit.nextCheck} This app never executes trades.</p></div>
@@ -431,8 +426,10 @@ function FitView({ item, profile, fit }: { item: ResearchItem; profile: Investme
 }
 
 function JournalView({ item, rationale, onCapture, onRationaleChange }: { item: ResearchItem; rationale: string; onCapture: () => void; onRationaleChange: (value: string) => void }) {
+  const trust = evaluateMemoTrust(item);
   return <Panel title="Decision journal" subtitle="Record why a decision state exists. This is not a trade instruction.">
-    <div className="compact-form"><Textarea label="Human rationale" value={rationale} onChange={onRationaleChange} placeholder="Why is this decision state being captured now?" /><button className="primary-button" onClick={onCapture}>Capture snapshot</button></div>
+    <TrustStatus trust={trust} />
+    <div className="compact-form"><Textarea label="Human rationale" value={rationale} onChange={onRationaleChange} placeholder="Why is this decision state being captured now?" /><button className={trust.decisionReady ? "primary-button" : "danger-button"} onClick={onCapture}>{trust.decisionReady ? "Capture decision snapshot" : "Capture with warnings"}</button></div>
     <div className="card-list">{item.decisionSnapshots.length === 0 ? <EmptyState text="No snapshots yet." /> : item.decisionSnapshots.map((snapshot) => <article key={snapshot.id} className="mini-card"><p className="tag">{new Date(snapshot.createdAt).toLocaleString()}</p><h4>{decisionLabels[snapshot.decision]} · {snapshot.confidence}</h4><p>{snapshot.humanRationale}</p><p><strong>{snapshot.actionBoundary}</strong></p></article>)}</div>
   </Panel>;
 }
@@ -456,6 +453,10 @@ function ActiveResearchCard({ item, onMemo }: { item: ResearchItem; onMemo: () =
 
 function FitSummary({ fit }: { fit: ReturnType<typeof scorePortfolioFit> }) {
   return <section className="rail-card"><p className="eyebrow">Fit score</p><div className="rail-score"><strong>{fit.score}</strong><span>{fit.label}</span></div>{fit.blockers.length > 0 ? <p>{fit.blockers.length} blocker(s) before review.</p> : <p>No major qualitative blockers flagged.</p>}</section>;
+}
+
+function TrustSummary({ trust }: { trust: ReturnType<typeof evaluateMemoTrust> }) {
+  return <section className={`rail-card trust-summary ${trust.decisionReady ? "is-ready" : "is-blocked"}`}><p className="eyebrow">Trust score</p><div className="rail-score"><strong>{trust.score}</strong><span>{trust.label}</span></div><p>{trust.requiredNextStep}</p></section>;
 }
 
 function ProfileSummary({ profile }: { profile: InvestmentProfile }) {
