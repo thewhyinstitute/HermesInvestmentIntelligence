@@ -237,6 +237,29 @@ a:hover { text-decoration: underline; }
 }
 .agent-response h4 { margin: 0 0 6px; }
 .agent-response p { margin: 0; white-space: pre-wrap; line-height: 1.55; color: #334155; }
+.agent-thread {
+  display: grid;
+  gap: 10px;
+  max-height: 360px;
+  overflow: auto;
+  padding: 4px;
+}
+.empty-chat { margin: 0; color: #64748b; font-weight: 700; }
+.agent-bubble {
+  max-width: 86%;
+  border-radius: 18px;
+  padding: 12px 14px;
+  background: white;
+  border: 1px solid var(--line);
+}
+.agent-bubble strong { display: block; margin-bottom: 6px; color: #1e3a8a; }
+.agent-bubble p { margin: 0; white-space: pre-wrap; line-height: 1.55; color: #334155; }
+.agent-bubble.is-user {
+  justify-self: end;
+  background: #172554;
+  border-color: #172554;
+}
+.agent-bubble.is-user strong, .agent-bubble.is-user p { color: white; }
 .priority-action { margin-top: 16px; }
 .priority-card .tag { background: rgba(255,255,255,0.14); color: #dbeafe; }
 .priority-card h3 { margin-top: 10px; font-size: 1.8rem; letter-spacing: -0.04em; }

@@ -1,5 +1,5 @@
 import { defaultSyncState, sampleAgentInbox, sampleRadarSignals } from "./sample-data";
-import type { AgentDraft, AgentResearchRequest, CloudSyncState, DecisionSnapshot, FrontierRadarSignal, InvestmentAppState, InvestmentProfile, RadarRun, RadarRunChangeSummary, ResearchItem } from "./types";
+import type { AgentChatMessage, AgentDraft, AgentResearchRequest, CloudSyncState, DecisionSnapshot, FrontierRadarSignal, InvestmentAppState, InvestmentProfile, RadarRun, RadarRunChangeSummary, ResearchItem } from "./types";
 
 export const INVESTMENT_STORAGE_KEY = "hermes-investment-intelligence:v2";
 export const LEGACY_INVESTMENT_STORAGE_KEY = "hermes-investment-intelligence:v1";
@@ -146,6 +146,14 @@ function isRadarRun(value: unknown): value is RadarRun {
     && isRadarRunChangeSummary(value.changes);
 }
 
+function isAgentChatMessage(value: unknown): value is AgentChatMessage {
+  if (!isRecord(value)) return false;
+  return isString(value.id)
+    && (value.role === "user" || value.role === "agent")
+    && isString(value.content)
+    && isString(value.createdAt);
+}
+
 function isSyncState(value: unknown): value is CloudSyncState {
   if (!isRecord(value)) return false;
   return isString(value.mode)
@@ -213,6 +221,7 @@ export function migrateLegacyState(value: unknown): InvestmentAppState | null {
     agentInbox: sampleAgentInbox,
     radarSignals: sampleRadarSignals,
     radarRuns: [],
+    agentMessages: [],
     sync: defaultSyncState,
     lastSavedAt: isString(value.lastSavedAt) ? value.lastSavedAt : new Date().toISOString(),
   };
@@ -227,6 +236,7 @@ export function createInitialInvestmentState(profile: InvestmentProfile, researc
     agentInbox: sampleAgentInbox,
     radarSignals: sampleRadarSignals,
     radarRuns: [],
+    agentMessages: [],
     sync: defaultSyncState,
     lastSavedAt: new Date().toISOString(),
   };
@@ -261,6 +271,7 @@ export function deserializeInvestmentState(raw: string | null): InvestmentAppSta
     if (!Array.isArray(value.agentInbox) || !value.agentInbox.every(isAgentResearchRequest)) return null;
     if (!Array.isArray(value.radarSignals) || !value.radarSignals.every(isRadarSignal)) return null;
     if (value.radarRuns !== undefined && (!Array.isArray(value.radarRuns) || !value.radarRuns.every(isRadarRun))) return null;
+    if (value.agentMessages !== undefined && (!Array.isArray(value.agentMessages) || !value.agentMessages.every(isAgentChatMessage))) return null;
     if (!isSyncState(value.sync)) return null;
     if (!isString(value.lastSavedAt)) return null;
 
@@ -272,6 +283,7 @@ export function deserializeInvestmentState(raw: string | null): InvestmentAppSta
       agentInbox: value.agentInbox,
       radarSignals: value.radarSignals,
       radarRuns: Array.isArray(value.radarRuns) ? value.radarRuns : [],
+      agentMessages: Array.isArray(value.agentMessages) ? value.agentMessages : [],
       sync: value.sync,
       lastSavedAt: value.lastSavedAt,
     };

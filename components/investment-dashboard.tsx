@@ -22,7 +22,7 @@ import {
   reviewEvidenceSource,
   scorePortfolioFit,
 } from "@/lib/workflows";
-import type { AgentResearchRequest, Decision, EvidenceSource, FrontierRadarSignal, InvestmentAppState, InvestmentProfile, RadarRun, ResearchItem, ResearchStatus } from "@/lib/types";
+import type { AgentChatMessage, AgentResearchRequest, Decision, EvidenceSource, FrontierRadarSignal, InvestmentAppState, InvestmentProfile, RadarRun, ResearchItem, ResearchStatus } from "@/lib/types";
 
 const statusLabels: Record<ResearchStatus, string> = {
   inbox: "Inbox",
@@ -80,6 +80,7 @@ export default function InvestmentDashboard() {
   const [agentInbox, setAgentInbox] = useState<AgentResearchRequest[]>(initialState.agentInbox);
   const [radarSignals, setRadarSignals] = useState<FrontierRadarSignal[]>(initialState.radarSignals);
   const [radarRuns, setRadarRuns] = useState<RadarRun[]>(initialState.radarRuns);
+  const [agentMessages, setAgentMessages] = useState<AgentChatMessage[]>(initialState.agentMessages);
   const [sync, setSync] = useState(initialState.sync);
   const [lastSavedAt, setLastSavedAt] = useState(initialState.lastSavedAt);
   const [isHydrated, setIsHydrated] = useState(false);
@@ -99,7 +100,6 @@ export default function InvestmentDashboard() {
   const [radarSignal, setRadarSignal] = useState("");
   const [radarScanStatus, setRadarScanStatus] = useState("Autonomous radar has not run yet.");
   const [agentCommand, setAgentCommand] = useState("Run radar and summarize what changed.");
-  const [agentResponse, setAgentResponse] = useState("Investment agent has not been called yet.");
   const [isAskingAgent, setIsAskingAgent] = useState(false);
   const [isScanningRadar, setIsScanningRadar] = useState(false);
   const [activeView, setActiveView] = useState<"radar" | "inbox" | "memo" | "fit" | "journal" | "settings">("radar");
@@ -115,6 +115,7 @@ export default function InvestmentDashboard() {
       setAgentInbox(stored.agentInbox);
       setRadarSignals(stored.radarSignals);
       setRadarRuns(stored.radarRuns);
+      setAgentMessages(stored.agentMessages);
       setSync(stored.sync);
       setLastSavedAt(stored.lastSavedAt);
       setSaveStatus(stored.schemaVersion === 2 ? "Loaded saved workspace from this browser." : "Migrated saved workspace into the current schema.");
@@ -134,9 +135,10 @@ export default function InvestmentDashboard() {
     agentInbox,
     radarSignals,
     radarRuns,
+    agentMessages,
     sync,
     lastSavedAt,
-  }), [agentInbox, items, lastSavedAt, profile, radarRuns, radarSignals, selected?.id, selectedId, sync]);
+  }), [agentInbox, agentMessages, items, lastSavedAt, profile, radarRuns, radarSignals, selected?.id, selectedId, sync]);
 
   useEffect(() => {
     if (!isHydrated) return;
@@ -281,24 +283,30 @@ export default function InvestmentDashboard() {
   }
 
   async function askInvestmentAgent() {
+    const message = agentCommand.trim();
+    if (!message) return;
     setIsAskingAgent(true);
-    setAgentResponse("Calling investment agent…");
+    const optimisticUser: AgentChatMessage = { id: uid("agent-user"), role: "user", content: message, createdAt: new Date().toISOString() };
+    setAgentMessages((current) => [...current, optimisticUser]);
+    setAgentCommand("");
     try {
-      const response = await fetch("/api/agent/radar", {
+      const response = await fetch("/api/agent/chat", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ profile, previousRun: radarRuns[0], command: agentCommand })
+        body: JSON.stringify({ profile, latestRun: radarRuns[0], selectedItem: selected, messages: agentMessages, message })
       });
-      if (!response.ok) throw new Error("Agent call failed");
-      const payload = await response.json() as { suggestedReply?: string; run?: RadarRun };
+      if (!response.ok) throw new Error("Agent chat failed");
+      const payload = await response.json() as { agentMessage?: AgentChatMessage; run?: RadarRun };
       if (payload.run) {
         setRadarRuns((current) => [payload.run as RadarRun, ...current].slice(0, 12));
         setRadarScanStatus(`Agent saved radar run: ${payload.run.opportunityCount} opportunity memo(s), ${payload.run.liveSourceCount} live sources, ${payload.run.changes.newOpportunities.length} new opportunity(ies).`);
       }
-      setAgentResponse(payload.suggestedReply ?? "Agent returned no summary. Try a radar refresh command.");
+      if (payload.agentMessage) {
+        setAgentMessages((current) => [...current, payload.agentMessage as AgentChatMessage]);
+      }
       setActiveView("radar");
     } catch {
-      setAgentResponse("Investment agent call failed. Check the radar API connection and try again.");
+      setAgentMessages((current) => [...current, { id: uid("agent-error"), role: "agent", content: "Investment agent chat failed. Check the radar API connection and try again.", createdAt: new Date().toISOString() }]);
     } finally {
       setIsAskingAgent(false);
     }
@@ -330,6 +338,7 @@ export default function InvestmentDashboard() {
     setAgentInbox(next.agentInbox);
     setRadarSignals(next.radarSignals);
     setRadarRuns(next.radarRuns);
+    setAgentMessages(next.agentMessages);
     setSync(next.sync);
     setLastSavedAt(next.lastSavedAt);
     setImportDraft("");
@@ -348,6 +357,7 @@ export default function InvestmentDashboard() {
     setAgentInbox(parsed.agentInbox);
     setRadarSignals(parsed.radarSignals);
     setRadarRuns(parsed.radarRuns);
+    setAgentMessages(parsed.agentMessages);
     setSync(parsed.sync);
     setLastSavedAt(parsed.lastSavedAt);
     setImportMessage("Imported workspace JSON. It will autosave locally.");
@@ -400,7 +410,7 @@ export default function InvestmentDashboard() {
           <Metric label="Trust score" value={trust?.score ?? 0} tone={trust?.decisionReady ? undefined : "warn"} />
         </div>
 
-        {activeView === "radar" ? <RadarView highestPriority={highestPriority} latestRun={latestRadarRun} radarRuns={radarRuns} signals={radarSignals} theme={radarTheme} signal={radarSignal} scanStatus={radarScanStatus} agentCommand={agentCommand} agentResponse={agentResponse} isAskingAgent={isAskingAgent} isScanning={isScanningRadar} onAdd={addRadarSignal} onAskAgent={askInvestmentAgent} onAgentCommandChange={setAgentCommand} onPromote={promoteRadarSignal} onPromoteOpportunity={promoteRadarOpportunity} onRunScan={runAutonomousRadar} onSignalChange={setRadarSignal} onThemeChange={setRadarTheme} onOpenMemo={() => setActiveView("memo")} /> : null}
+        {activeView === "radar" ? <RadarView highestPriority={highestPriority} latestRun={latestRadarRun} radarRuns={radarRuns} signals={radarSignals} theme={radarTheme} signal={radarSignal} scanStatus={radarScanStatus} agentCommand={agentCommand} agentMessages={agentMessages} isAskingAgent={isAskingAgent} isScanning={isScanningRadar} onAdd={addRadarSignal} onAskAgent={askInvestmentAgent} onAgentCommandChange={setAgentCommand} onPromote={promoteRadarSignal} onPromoteOpportunity={promoteRadarOpportunity} onRunScan={runAutonomousRadar} onSignalChange={setRadarSignal} onThemeChange={setRadarTheme} onOpenMemo={() => setActiveView("memo")} /> : null}
         {activeView === "inbox" ? <InboxView items={items} selectedId={selected?.id ?? ""} draftAssetClass={draftAssetClass} draftTheme={draftTheme} draftTitle={draftTitle} draftWhyNow={draftWhyNow} agentInbox={agentInbox} agentRequestDraft={agentRequestDraft} onAdd={addResearchItem} onAssetClassChange={setDraftAssetClass} onDraft={draftSelectedRequest} onAgentDraftChange={setAgentRequestDraft} onQueueAgent={queueAgentRequest} onSelect={setSelectedId} onThemeChange={setDraftTheme} onTitleChange={setDraftTitle} onWhyNowChange={setDraftWhyNow} /> : null}
         {activeView === "memo" && selected ? <MemoView item={selected} update={updateSelected} sourceClaim={sourceClaim} sourceTitle={sourceTitle} sourceUrl={sourceUrl} onAddEvidence={addEvidence} onClaimChange={setSourceClaim} onTitleChange={setSourceTitle} onUrlChange={setSourceUrl} /> : null}
         {activeView === "fit" && selected && fit ? <FitView item={selected} profile={profile} fit={fit} /> : null}
@@ -442,16 +452,19 @@ function Select<T extends string>({ label, value, onChange, options }: { label: 
   return <label className="field"><span>{label}</span><select value={value} onChange={(event) => onChange(event.target.value as T)}>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>;
 }
 
-function RadarView({ highestPriority, latestRun, radarRuns, signals, theme, signal, scanStatus, agentCommand, agentResponse, isAskingAgent, isScanning, onAdd, onAskAgent, onAgentCommandChange, onPromote, onPromoteOpportunity, onRunScan, onSignalChange, onThemeChange, onOpenMemo }: { highestPriority?: ResearchItem; latestRun?: RadarRun; radarRuns: RadarRun[]; signals: FrontierRadarSignal[]; theme: string; signal: string; scanStatus: string; agentCommand: string; agentResponse: string; isAskingAgent: boolean; isScanning: boolean; onAdd: () => void; onAskAgent: () => void; onAgentCommandChange: (value: string) => void; onPromote: (signal: FrontierRadarSignal) => void; onPromoteOpportunity: (item: ResearchItem) => void; onRunScan: () => void; onSignalChange: (value: string) => void; onThemeChange: (value: string) => void; onOpenMemo: () => void }) {
+function RadarView({ highestPriority, latestRun, radarRuns, signals, theme, signal, scanStatus, agentCommand, agentMessages, isAskingAgent, isScanning, onAdd, onAskAgent, onAgentCommandChange, onPromote, onPromoteOpportunity, onRunScan, onSignalChange, onThemeChange, onOpenMemo }: { highestPriority?: ResearchItem; latestRun?: RadarRun; radarRuns: RadarRun[]; signals: FrontierRadarSignal[]; theme: string; signal: string; scanStatus: string; agentCommand: string; agentMessages: AgentChatMessage[]; isAskingAgent: boolean; isScanning: boolean; onAdd: () => void; onAskAgent: () => void; onAgentCommandChange: (value: string) => void; onPromote: (signal: FrontierRadarSignal) => void; onPromoteOpportunity: (item: ResearchItem) => void; onRunScan: () => void; onSignalChange: (value: string) => void; onThemeChange: (value: string) => void; onOpenMemo: () => void }) {
   const evidenceCoverage = highestPriority ? evaluateEvidenceCoverage(highestPriority) : null;
   return <div className="view-grid two-col">
     <Panel title="Autonomous opportunity radar" subtitle="Run live research scans, save each run, and promote only the opportunities worth memo work." action={<button className="primary-button" onClick={onRunScan} disabled={isScanning}>{isScanning ? "Scanning…" : "Run radar scan"}</button>}>
       <div className="agent-status"><p className="eyebrow">Agent status</p><p>{scanStatus}</p></div>
       <div className="agent-command-card">
-        <p className="eyebrow">Ask Investment Agent</p>
-        <Textarea label="Command" value={agentCommand} onChange={onAgentCommandChange} rows={3} placeholder="e.g. Run radar and summarize what changed" />
-        <div className="button-row"><button className="primary-button" onClick={onAskAgent} disabled={isAskingAgent}>{isAskingAgent ? "Asking agent…" : "Ask agent"}</button><button className="secondary-button" onClick={onRunScan} disabled={isScanning}>Run scan only</button></div>
-        <div className="agent-response"><h4>Agent response</h4><p>{agentResponse}</p></div>
+        <p className="eyebrow">Investment Agent Chat</p>
+        <div className="agent-thread" aria-live="polite">
+          {agentMessages.length === 0 ? <p className="empty-chat">Start with: run radar, what changed, which should I research first, or what evidence is missing?</p> : agentMessages.map((message) => <div key={message.id} className={`agent-bubble ${message.role === "user" ? "is-user" : "is-agent"}`}><strong>{message.role === "user" ? "You" : "Agent"}</strong><p>{message.content}</p></div>)}
+          {isAskingAgent ? <div className="agent-bubble is-agent"><strong>Agent</strong><p>Thinking…</p></div> : null}
+        </div>
+        <Textarea label="Message" value={agentCommand} onChange={onAgentCommandChange} rows={3} placeholder="Ask a follow-up…" />
+        <div className="button-row"><button className="primary-button" onClick={onAskAgent} disabled={isAskingAgent || !agentCommand.trim()}>{isAskingAgent ? "Sending…" : "Send"}</button></div>
         <p className="notice">Research support only. The agent cannot place trades, allocate capital, or authorize external actions.</p>
       </div>
       {latestRun ? <RadarRunSummary run={latestRun} /> : null}

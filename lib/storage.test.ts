@@ -43,6 +43,7 @@ describe("investment state persistence", () => {
     expect(state.agentInbox.length).toBeGreaterThan(0);
     expect(state.radarSignals.length).toBeGreaterThan(0);
     expect(state.radarRuns).toEqual([]);
+    expect(state.agentMessages).toEqual([]);
     expect(state.sync.mode).toBe("cloud_ready");
     expect(state.lastSavedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
@@ -62,6 +63,7 @@ describe("investment state persistence", () => {
     expect(migrated?.researchItems[0].assumptions).toEqual([]);
     expect(migrated?.researchItems[0].agentDrafts).toEqual([]);
     expect(migrated?.radarRuns).toEqual([]);
+    expect(migrated?.agentMessages).toEqual([]);
     expect(migrated?.sync.provider).toBe("supabase_ready");
   });
 

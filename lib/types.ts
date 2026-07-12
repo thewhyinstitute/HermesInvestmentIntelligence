@@ -123,6 +123,13 @@ export interface RadarRun {
   changes: RadarRunChangeSummary;
 }
 
+export interface AgentChatMessage {
+  id: string;
+  role: "user" | "agent";
+  content: string;
+  createdAt: string;
+}
+
 export interface CloudSyncState {
   mode: SyncMode;
   provider: "none" | "supabase_ready" | "supabase_connected";
@@ -139,6 +146,7 @@ export interface InvestmentAppState {
   agentInbox: AgentResearchRequest[];
   radarSignals: FrontierRadarSignal[];
   radarRuns: RadarRun[];
+  agentMessages: AgentChatMessage[];
   sync: CloudSyncState;
   lastSavedAt: string;
 }
