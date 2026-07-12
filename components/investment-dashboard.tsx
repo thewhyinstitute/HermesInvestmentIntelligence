@@ -98,6 +98,9 @@ export default function InvestmentDashboard() {
   const [radarTheme, setRadarTheme] = useState("");
   const [radarSignal, setRadarSignal] = useState("");
   const [radarScanStatus, setRadarScanStatus] = useState("Autonomous radar has not run yet.");
+  const [agentCommand, setAgentCommand] = useState("Run radar and summarize what changed.");
+  const [agentResponse, setAgentResponse] = useState("Investment agent has not been called yet.");
+  const [isAskingAgent, setIsAskingAgent] = useState(false);
   const [isScanningRadar, setIsScanningRadar] = useState(false);
   const [activeView, setActiveView] = useState<"radar" | "inbox" | "memo" | "fit" | "journal" | "settings">("radar");
 
@@ -277,6 +280,30 @@ export default function InvestmentDashboard() {
     }
   }
 
+  async function askInvestmentAgent() {
+    setIsAskingAgent(true);
+    setAgentResponse("Calling investment agent…");
+    try {
+      const response = await fetch("/api/agent/radar", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ profile, previousRun: radarRuns[0], command: agentCommand })
+      });
+      if (!response.ok) throw new Error("Agent call failed");
+      const payload = await response.json() as { suggestedReply?: string; run?: RadarRun };
+      if (payload.run) {
+        setRadarRuns((current) => [payload.run as RadarRun, ...current].slice(0, 12));
+        setRadarScanStatus(`Agent saved radar run: ${payload.run.opportunityCount} opportunity memo(s), ${payload.run.liveSourceCount} live sources, ${payload.run.changes.newOpportunities.length} new opportunity(ies).`);
+      }
+      setAgentResponse(payload.suggestedReply ?? "Agent returned no summary. Try a radar refresh command.");
+      setActiveView("radar");
+    } catch {
+      setAgentResponse("Investment agent call failed. Check the radar API connection and try again.");
+    } finally {
+      setIsAskingAgent(false);
+    }
+  }
+
   function promoteRadarOpportunity(opportunity: ResearchItem) {
     const next: ResearchItem = {
       ...opportunity,
@@ -373,7 +400,7 @@ export default function InvestmentDashboard() {
           <Metric label="Trust score" value={trust?.score ?? 0} tone={trust?.decisionReady ? undefined : "warn"} />
         </div>
 
-        {activeView === "radar" ? <RadarView highestPriority={highestPriority} latestRun={latestRadarRun} radarRuns={radarRuns} signals={radarSignals} theme={radarTheme} signal={radarSignal} scanStatus={radarScanStatus} isScanning={isScanningRadar} onAdd={addRadarSignal} onPromote={promoteRadarSignal} onPromoteOpportunity={promoteRadarOpportunity} onRunScan={runAutonomousRadar} onSignalChange={setRadarSignal} onThemeChange={setRadarTheme} onOpenMemo={() => setActiveView("memo")} /> : null}
+        {activeView === "radar" ? <RadarView highestPriority={highestPriority} latestRun={latestRadarRun} radarRuns={radarRuns} signals={radarSignals} theme={radarTheme} signal={radarSignal} scanStatus={radarScanStatus} agentCommand={agentCommand} agentResponse={agentResponse} isAskingAgent={isAskingAgent} isScanning={isScanningRadar} onAdd={addRadarSignal} onAskAgent={askInvestmentAgent} onAgentCommandChange={setAgentCommand} onPromote={promoteRadarSignal} onPromoteOpportunity={promoteRadarOpportunity} onRunScan={runAutonomousRadar} onSignalChange={setRadarSignal} onThemeChange={setRadarTheme} onOpenMemo={() => setActiveView("memo")} /> : null}
         {activeView === "inbox" ? <InboxView items={items} selectedId={selected?.id ?? ""} draftAssetClass={draftAssetClass} draftTheme={draftTheme} draftTitle={draftTitle} draftWhyNow={draftWhyNow} agentInbox={agentInbox} agentRequestDraft={agentRequestDraft} onAdd={addResearchItem} onAssetClassChange={setDraftAssetClass} onDraft={draftSelectedRequest} onAgentDraftChange={setAgentRequestDraft} onQueueAgent={queueAgentRequest} onSelect={setSelectedId} onThemeChange={setDraftTheme} onTitleChange={setDraftTitle} onWhyNowChange={setDraftWhyNow} /> : null}
         {activeView === "memo" && selected ? <MemoView item={selected} update={updateSelected} sourceClaim={sourceClaim} sourceTitle={sourceTitle} sourceUrl={sourceUrl} onAddEvidence={addEvidence} onClaimChange={setSourceClaim} onTitleChange={setSourceTitle} onUrlChange={setSourceUrl} /> : null}
         {activeView === "fit" && selected && fit ? <FitView item={selected} profile={profile} fit={fit} /> : null}
@@ -415,11 +442,18 @@ function Select<T extends string>({ label, value, onChange, options }: { label: 
   return <label className="field"><span>{label}</span><select value={value} onChange={(event) => onChange(event.target.value as T)}>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>;
 }
 
-function RadarView({ highestPriority, latestRun, radarRuns, signals, theme, signal, scanStatus, isScanning, onAdd, onPromote, onPromoteOpportunity, onRunScan, onSignalChange, onThemeChange, onOpenMemo }: { highestPriority?: ResearchItem; latestRun?: RadarRun; radarRuns: RadarRun[]; signals: FrontierRadarSignal[]; theme: string; signal: string; scanStatus: string; isScanning: boolean; onAdd: () => void; onPromote: (signal: FrontierRadarSignal) => void; onPromoteOpportunity: (item: ResearchItem) => void; onRunScan: () => void; onSignalChange: (value: string) => void; onThemeChange: (value: string) => void; onOpenMemo: () => void }) {
+function RadarView({ highestPriority, latestRun, radarRuns, signals, theme, signal, scanStatus, agentCommand, agentResponse, isAskingAgent, isScanning, onAdd, onAskAgent, onAgentCommandChange, onPromote, onPromoteOpportunity, onRunScan, onSignalChange, onThemeChange, onOpenMemo }: { highestPriority?: ResearchItem; latestRun?: RadarRun; radarRuns: RadarRun[]; signals: FrontierRadarSignal[]; theme: string; signal: string; scanStatus: string; agentCommand: string; agentResponse: string; isAskingAgent: boolean; isScanning: boolean; onAdd: () => void; onAskAgent: () => void; onAgentCommandChange: (value: string) => void; onPromote: (signal: FrontierRadarSignal) => void; onPromoteOpportunity: (item: ResearchItem) => void; onRunScan: () => void; onSignalChange: (value: string) => void; onThemeChange: (value: string) => void; onOpenMemo: () => void }) {
   const evidenceCoverage = highestPriority ? evaluateEvidenceCoverage(highestPriority) : null;
   return <div className="view-grid two-col">
     <Panel title="Autonomous opportunity radar" subtitle="Run live research scans, save each run, and promote only the opportunities worth memo work." action={<button className="primary-button" onClick={onRunScan} disabled={isScanning}>{isScanning ? "Scanning…" : "Run radar scan"}</button>}>
       <div className="agent-status"><p className="eyebrow">Agent status</p><p>{scanStatus}</p></div>
+      <div className="agent-command-card">
+        <p className="eyebrow">Ask Investment Agent</p>
+        <Textarea label="Command" value={agentCommand} onChange={onAgentCommandChange} rows={3} placeholder="e.g. Run radar and summarize what changed" />
+        <div className="button-row"><button className="primary-button" onClick={onAskAgent} disabled={isAskingAgent}>{isAskingAgent ? "Asking agent…" : "Ask agent"}</button><button className="secondary-button" onClick={onRunScan} disabled={isScanning}>Run scan only</button></div>
+        <div className="agent-response"><h4>Agent response</h4><p>{agentResponse}</p></div>
+        <p className="notice">Research support only. The agent cannot place trades, allocate capital, or authorize external actions.</p>
+      </div>
       {latestRun ? <RadarRunSummary run={latestRun} /> : null}
       {highestPriority ? <div className="priority-card"><p className="tag">{highestPriority.theme}</p><h3>{highestPriority.title}</h3><p>{highestPriority.whyNow}</p><div className="checklist"><span>{highestPriority.sources.length} source(s)</span><span>{evidenceCoverage?.liveSearchCount ?? 0} live</span><span>{evidenceCoverage?.primaryCount ?? 0} primary</span><span>{highestPriority.openQuestions.length} open question(s)</span><span>{highestPriority.confidence} confidence</span></div><strong>Next: {nextActionFor(highestPriority)}</strong><div className="button-row priority-action"><button className="secondary-button" onClick={() => onPromoteOpportunity(highestPriority)}>Promote to memo</button><button className="secondary-button" onClick={onOpenMemo}>Open active memo</button></div></div> : <EmptyState text="No radar run yet. Run radar scan to save a dated evidence snapshot." />}
     </Panel>

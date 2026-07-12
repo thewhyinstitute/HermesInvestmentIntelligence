@@ -220,6 +220,23 @@ a:hover { text-decoration: underline; }
   margin-bottom: 14px;
 }
 .agent-status p:last-child { margin: 0; color: #475569; font-weight: 700; line-height: 1.55; }
+.agent-command-card {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: #f8fbff;
+  padding: 16px;
+  margin-bottom: 14px;
+}
+.agent-response {
+  border-left: 4px solid var(--accent);
+  border-radius: 16px;
+  background: white;
+  padding: 12px 14px;
+}
+.agent-response h4 { margin: 0 0 6px; }
+.agent-response p { margin: 0; white-space: pre-wrap; line-height: 1.55; color: #334155; }
 .priority-action { margin-top: 16px; }
 .priority-card .tag { background: rgba(255,255,255,0.14); color: #dbeafe; }
 .priority-card h3 { margin-top: 10px; font-size: 1.8rem; letter-spacing: -0.04em; }

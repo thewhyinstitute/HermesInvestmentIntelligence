@@ -79,7 +79,7 @@ function agentSummary(run: RadarRun) {
 export async function POST(request: Request) {
   if (!authorize(request)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const body = await request.json().catch(() => ({})) as { profile?: InvestmentProfile; previousRun?: RadarRun };
+  const body = await request.json().catch(() => ({})) as { profile?: InvestmentProfile; previousRun?: RadarRun; command?: string };
   const profile = body.profile ?? defaultProfile;
   const opportunities = buildFallbackRadarOpportunities(profile);
   const queries = buildRadarSearchQueries(profile);
@@ -92,6 +92,7 @@ export async function POST(request: Request) {
     agent: "investment-intelligence-radar",
     telegramReady: true,
     action: "radar_scan",
+    command: body.command?.trim() || "Run radar and summarize what changed.",
     run,
     suggestedReply: agentSummary(run),
     disclaimer: "Research support only. These are opportunities for review, not recommendations or trade instructions."
