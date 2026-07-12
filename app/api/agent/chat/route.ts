@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { answerAgentChat, createAgentChatMessage, summarizeRunForChat } from "@/lib/agent-chat";
 import { createRadarRun } from "@/lib/radar-runs";
-import { buildFallbackRadarOpportunities, buildRadarSearchQueries, mergeRadarEvidence } from "@/lib/radar-agent";
+import { buildRadarSearchQueries, buildTopicRadarOpportunities, mergeRadarEvidence } from "@/lib/radar-agent";
 import { defaultProfile } from "@/lib/sample-data";
 import type { AgentChatMessage, EvidenceSource, InvestmentProfile, RadarRun, ResearchItem } from "@/lib/types";
 
@@ -58,13 +58,13 @@ function attachSearchEvidence(opportunities: ResearchItem[], searchEvidence: Evi
   return opportunities.map((item, index) => ({ ...item, sources: mergeRadarEvidence(item.sources, searchEvidence[index] ?? []) }));
 }
 
-async function runRadar(profile: InvestmentProfile, previousRun?: RadarRun) {
-  const opportunities = buildFallbackRadarOpportunities(profile);
-  const queries = buildRadarSearchQueries(profile);
+async function runRadar(profile: InvestmentProfile, previousRun?: RadarRun, prompt = "") {
+  const opportunities = buildTopicRadarOpportunities(profile, prompt);
+  const queries = buildRadarSearchQueries(profile, prompt);
   const searchEvidence = await Promise.all(queries.map((query) => tavilySearch(query)));
   const enriched = attachSearchEvidence(opportunities, searchEvidence);
   const usedLiveSearch = searchEvidence.some((items) => items.length > 0);
-  return createRadarRun({ mode: usedLiveSearch ? "live-search-plus-curated-fallback" : "curated-fallback", opportunities: enriched, previousRun });
+  return createRadarRun({ mode: usedLiveSearch ? "topic-live-search-plus-curated-evidence" : "topic-curated-evidence", opportunities: enriched, previousRun });
 }
 
 function authorize(request: Request) {
@@ -76,7 +76,13 @@ function authorize(request: Request) {
 
 function shouldRunRadar(message: string) {
   const normalized = message.toLowerCase();
-  return normalized.includes("run radar") || normalized.includes("scan") || normalized.includes("refresh radar");
+  return normalized.includes("run radar")
+    || normalized.includes("scan")
+    || normalized.includes("refresh radar")
+    || normalized.includes("find me opportunities")
+    || normalized.includes("find opportunities")
+    || normalized.includes("opportunities to invest")
+    || normalized.includes("investment opportunities");
 }
 
 export async function POST(request: Request) {
@@ -96,7 +102,7 @@ export async function POST(request: Request) {
   let content: string;
 
   if (shouldRunRadar(message)) {
-    run = await runRadar(profile, body.latestRun);
+    run = await runRadar(profile, body.latestRun, message);
     content = summarizeRunForChat(run);
   } else {
     content = answerAgentChat({ message, messages: body.messages, latestRun: run, selectedItem: body.selectedItem, profile });

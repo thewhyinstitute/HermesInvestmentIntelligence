@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { defaultProfile } from "./sample-data";
-import { buildFallbackRadarOpportunities, mergeRadarEvidence } from "./radar-agent";
+import { buildFallbackRadarOpportunities, buildTopicRadarOpportunities, mergeRadarEvidence } from "./radar-agent";
 
 describe("autonomous radar agent", () => {
   it("creates evidence-backed opportunities aligned to the user profile", () => {
@@ -29,5 +29,16 @@ describe("autonomous radar agent", () => {
 
     expect(merged.length).toBe(item.sources.length);
     expect(new Set(merged.map((source) => source.url)).size).toBe(merged.length);
+  });
+
+  it("creates topic-directed AI power and grid opportunities with credible evidence", () => {
+    const opportunities = buildTopicRadarOpportunities(defaultProfile, "find me opportunities to invest in AI power and grid infrastructure");
+
+    expect(opportunities).toHaveLength(3);
+    expect(opportunities[0].title).toContain("Grid equipment");
+    expect(opportunities[0].confidence).toBe("high");
+    expect(opportunities[0].sources.length).toBeGreaterThanOrEqual(3);
+    expect(opportunities[0].sources.every((source) => source.quality === "high")).toBe(true);
+    expect(opportunities.flatMap((item) => item.sources).some((source) => source.sourceType === "regulator" || source.sourceType === "market_data")).toBe(true);
   });
 });

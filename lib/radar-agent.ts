@@ -31,6 +31,7 @@ function opportunity(input: {
   risks: string[];
   fitNotes: string;
   sources: EvidenceSource[];
+  confidence?: ResearchItem["confidence"];
 }): ResearchItem {
   const id = `radar-${slugify(input.title)}-${Date.now()}`;
   return {
@@ -46,7 +47,7 @@ function opportunity(input: {
     risks: input.risks,
     fitNotes: input.fitNotes,
     decision: "research_deeper",
-    confidence: "medium",
+    confidence: input.confidence ?? "medium",
     targetAllocation: "Research only; no allocation proposed.",
     reviewCadence: "Review after evidence refresh or material market change",
     nextReviewAt: today(),
@@ -66,6 +67,79 @@ function opportunity(input: {
     }],
     decisionSnapshots: []
   };
+}
+
+function normalizeTopic(value: string) {
+  return value.toLowerCase().replace(/[“”]/g, '"').replace(/[‘’]/g, "'").trim();
+}
+
+export function isAiPowerGridTopic(value: string) {
+  const topic = normalizeTopic(value);
+  return topic.includes("ai")
+    && (topic.includes("power") || topic.includes("electricity") || topic.includes("energy"))
+    && (topic.includes("grid") || topic.includes("infrastructure") || topic.includes("data center") || topic.includes("datacenter"));
+}
+
+export function buildTopicRadarOpportunities(profile: InvestmentProfile, prompt: string): ResearchItem[] {
+  if (!isAiPowerGridTopic(prompt)) return buildFallbackRadarOpportunities(profile);
+
+  const geographicFit = profile.geography.includes("Singapore")
+    ? "Check whether global exposure complements Singapore/Asia constraints and currency needs."
+    : "Check geographic concentration and currency exposure against the profile.";
+
+  return [
+    opportunity({
+      title: "Grid equipment and electrification suppliers",
+      assetClass: "Theme / ETF or stock watchlist",
+      theme: "AI power infrastructure",
+      whyNow: "AI data-center growth increases scrutiny on transmission capacity, transformers, switchgear, substations, and grid modernization bottlenecks.",
+      thesis: "The investable angle may be less about AI models and more about the electrical equipment layer needed to connect and manage large new loads.",
+      assumptions: ["Data-center electricity demand continues growing", "Grid upgrade capex remains durable across cycles", geographicFit],
+      openQuestions: ["Which ETFs or listed suppliers provide clean exposure without excessive single-name risk?", "How much of the story is already priced into electrical equipment valuations?", "Which regions have the clearest grid capex visibility?"],
+      risks: ["Valuation crowding", "Project delays and permitting", "Cyclical industrial demand", "Indirect or diluted ETF exposure"],
+      fitNotes: "Relevant to AI infrastructure interests, but should be sized as research-only until vehicle quality, valuation, and overlap are checked.",
+      confidence: "high",
+      sources: [
+        source("src-iea-electricity-2024-grid", "IEA Electricity 2024", "https://www.iea.org/reports/electricity-2024", "Use to verify electricity demand, grid, and data-centre load assumptions.", "analysis", "high"),
+        source("src-doe-transmission", "U.S. DOE transmission needs study", "https://www.energy.gov/gdo/national-transmission-needs-study", "Use to test whether transmission constraints are an official infrastructure bottleneck.", "regulator", "high"),
+        source("src-iea-grids", "IEA electricity grids and secure energy transitions", "https://www.iea.org/reports/electricity-grids-and-secure-energy-transitions", "Use to validate grid investment needs and bottlenecks.", "analysis", "high")
+      ]
+    }),
+    opportunity({
+      title: "Data-center power, cooling, and energy-management infrastructure",
+      assetClass: "Theme / ETF or stock watchlist",
+      theme: "AI data-center infrastructure",
+      whyNow: "AI workloads raise data-center density, making power distribution, backup power, cooling, and energy-management systems more strategically important.",
+      thesis: "Infrastructure vendors around power distribution, thermal management, and data-center operations may benefit from AI capex even when semiconductor winners rotate.",
+      assumptions: ["AI capex keeps translating into physical data-center buildout", "Power and cooling constraints remain material", "Exposure can be diversified across vendors or funds"],
+      openQuestions: ["Which companies or ETFs have direct revenue exposure to data-center power and cooling?", "What customer concentration exists around hyperscalers?", "Are margins protected or competed away?"],
+      risks: ["Hyperscaler capex slowdown", "Supply-chain constraints", "Competition compressing margins", "High expectations embedded in prices"],
+      fitNotes: "Strong thematic fit, but needs evidence on investable vehicle purity and valuation before any decision.",
+      confidence: "high",
+      sources: [
+        source("src-iea-ai-energy", "IEA commentary on AI and energy demand", "https://www.iea.org/commentaries/what-the-data-centre-and-ai-boom-could-mean-for-the-energy-sector", "Use to test whether AI/data-centre energy claims are material or overstated.", "analysis", "high"),
+        source("src-datacenters-doe", "U.S. DOE data centers and servers", "https://www.energy.gov/eere/buildings/data-centers-and-servers", "Use as official context for data-center energy efficiency and infrastructure constraints.", "regulator", "high"),
+        source("src-uptime-institute", "Uptime Institute data center research", "https://uptimeinstitute.com/research", "Use as industry context for data-center capacity, resilience, and operations trends.", "analysis", "medium")
+      ]
+    }),
+    opportunity({
+      title: "Power generation and clean firm capacity for AI load growth",
+      assetClass: "Utilities / infrastructure / energy watchlist",
+      theme: "AI electricity supply",
+      whyNow: "Large AI campuses can require dependable electricity supply, pushing investors to examine utilities, independent power producers, nuclear, renewables, storage, and gas capacity.",
+      thesis: "AI power demand may support selected generation and utility infrastructure, but the opportunity depends heavily on regulation, contracts, fuel mix, and local grid constraints.",
+      assumptions: ["AI load growth is durable enough to affect utility planning", "Regulated or contracted assets can capture economics", "Policy and permitting do not erase returns"],
+      openQuestions: ["Which markets have approved load-growth capex rather than speculative narratives?", "Are there credible long-term contracts with hyperscalers?", "What fuel, regulatory, and ratepayer risks apply?"],
+      risks: ["Regulatory disallowance", "Commodity/fuel risk", "Permitting delays", "Narrative-driven overvaluation"],
+      fitNotes: "Potential portfolio diversifier versus pure tech exposure, but requires jurisdiction-level evidence and vehicle due diligence.",
+      confidence: "medium",
+      sources: [
+        source("src-ferc-infrastructure", "FERC electric reliability and infrastructure", "https://www.ferc.gov/industries-data/electric", "Use to understand U.S. electricity market, reliability, and infrastructure context.", "regulator", "high"),
+        source("src-eia-electricity", "U.S. EIA electricity data", "https://www.eia.gov/electricity/", "Use to verify electricity generation, demand, and market data before relying on the theme.", "market_data", "high"),
+        source("src-iea-electricity-2024-supply", "IEA Electricity 2024", "https://www.iea.org/reports/electricity-2024", "Use to compare electricity demand growth and supply-side context.", "analysis", "high")
+      ]
+    })
+  ];
 }
 
 export function buildFallbackRadarOpportunities(profile: InvestmentProfile): ResearchItem[] {
@@ -119,7 +193,14 @@ export function buildFallbackRadarOpportunities(profile: InvestmentProfile): Res
   ];
 }
 
-export function buildRadarSearchQueries(profile: InvestmentProfile) {
+export function buildRadarSearchQueries(profile: InvestmentProfile, prompt = "") {
+  if (isAiPowerGridTopic(prompt)) {
+    return [
+      `AI data center electricity demand grid equipment transformers switchgear investment evidence ${profile.geography}`,
+      `AI data center power cooling energy management infrastructure credible sources ${profile.geography}`,
+      `AI electricity load growth utilities power generation grid infrastructure investment risk ${profile.horizon}`
+    ];
+  }
   return [
     `AI data center power grid infrastructure ETF opportunity ${profile.geography}`,
     `short duration Treasury bills cash management Singapore investor ${profile.horizon}`,
