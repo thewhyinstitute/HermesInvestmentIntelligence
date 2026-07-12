@@ -1,5 +1,5 @@
 import { defaultSyncState, sampleAgentInbox, sampleRadarSignals } from "./sample-data";
-import type { AgentDraft, AgentResearchRequest, CloudSyncState, DecisionSnapshot, FrontierRadarSignal, InvestmentAppState, InvestmentProfile, ResearchItem } from "./types";
+import type { AgentDraft, AgentResearchRequest, CloudSyncState, DecisionSnapshot, FrontierRadarSignal, InvestmentAppState, InvestmentProfile, RadarRun, RadarRunChangeSummary, ResearchItem } from "./types";
 
 export const INVESTMENT_STORAGE_KEY = "hermes-investment-intelligence:v2";
 export const LEGACY_INVESTMENT_STORAGE_KEY = "hermes-investment-intelligence:v1";
@@ -121,6 +121,31 @@ function isRadarSignal(value: unknown): value is FrontierRadarSignal {
     && isString(value.lastReviewedAt);
 }
 
+function isRadarRunChangeSummary(value: unknown): value is RadarRunChangeSummary {
+  if (!isRecord(value)) return false;
+  return isStringArray(value.newOpportunities)
+    && isStringArray(value.repeatedOpportunities)
+    && isStringArray(value.newSourceUrls)
+    && isStringArray(value.removedSourceUrls)
+    && isStringArray(value.improvedEvidenceTitles)
+    && isStringArray(value.worsenedEvidenceTitles);
+}
+
+function isRadarRun(value: unknown): value is RadarRun {
+  if (!isRecord(value)) return false;
+  return isString(value.id)
+    && isString(value.generatedAt)
+    && isString(value.mode)
+    && typeof value.opportunityCount === "number"
+    && typeof value.sourceCount === "number"
+    && typeof value.liveSourceCount === "number"
+    && typeof value.primarySourceCount === "number"
+    && typeof value.evidenceGapCount === "number"
+    && Array.isArray(value.opportunities)
+    && value.opportunities.every(isResearchItem)
+    && isRadarRunChangeSummary(value.changes);
+}
+
 function isSyncState(value: unknown): value is CloudSyncState {
   if (!isRecord(value)) return false;
   return isString(value.mode)
@@ -187,6 +212,7 @@ export function migrateLegacyState(value: unknown): InvestmentAppState | null {
     selectedResearchId: isString(value.selectedResearchId) ? value.selectedResearchId : (migratedItems[0]?.id ?? ""),
     agentInbox: sampleAgentInbox,
     radarSignals: sampleRadarSignals,
+    radarRuns: [],
     sync: defaultSyncState,
     lastSavedAt: isString(value.lastSavedAt) ? value.lastSavedAt : new Date().toISOString(),
   };
@@ -200,6 +226,7 @@ export function createInitialInvestmentState(profile: InvestmentProfile, researc
     selectedResearchId: researchItems[0]?.id ?? "",
     agentInbox: sampleAgentInbox,
     radarSignals: sampleRadarSignals,
+    radarRuns: [],
     sync: defaultSyncState,
     lastSavedAt: new Date().toISOString(),
   };
@@ -233,6 +260,7 @@ export function deserializeInvestmentState(raw: string | null): InvestmentAppSta
     if (!isString(value.selectedResearchId)) return null;
     if (!Array.isArray(value.agentInbox) || !value.agentInbox.every(isAgentResearchRequest)) return null;
     if (!Array.isArray(value.radarSignals) || !value.radarSignals.every(isRadarSignal)) return null;
+    if (value.radarRuns !== undefined && (!Array.isArray(value.radarRuns) || !value.radarRuns.every(isRadarRun))) return null;
     if (!isSyncState(value.sync)) return null;
     if (!isString(value.lastSavedAt)) return null;
 
@@ -243,6 +271,7 @@ export function deserializeInvestmentState(raw: string | null): InvestmentAppSta
       selectedResearchId: value.selectedResearchId,
       agentInbox: value.agentInbox,
       radarSignals: value.radarSignals,
+      radarRuns: Array.isArray(value.radarRuns) ? value.radarRuns : [],
       sync: value.sync,
       lastSavedAt: value.lastSavedAt,
     };

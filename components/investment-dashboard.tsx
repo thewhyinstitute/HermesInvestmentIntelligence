@@ -10,6 +10,7 @@ import {
   serializeInvestmentState,
   updateStateMetadata,
 } from "@/lib/storage";
+import { createRadarRun } from "@/lib/radar-runs";
 import {
   createAgentDraftFromRequest,
   createDecisionSnapshot,
@@ -21,7 +22,7 @@ import {
   reviewEvidenceSource,
   scorePortfolioFit,
 } from "@/lib/workflows";
-import type { AgentResearchRequest, Decision, EvidenceSource, FrontierRadarSignal, InvestmentAppState, InvestmentProfile, ResearchItem, ResearchStatus } from "@/lib/types";
+import type { AgentResearchRequest, Decision, EvidenceSource, FrontierRadarSignal, InvestmentAppState, InvestmentProfile, RadarRun, ResearchItem, ResearchStatus } from "@/lib/types";
 
 const statusLabels: Record<ResearchStatus, string> = {
   inbox: "Inbox",
@@ -78,6 +79,7 @@ export default function InvestmentDashboard() {
   const [selectedId, setSelectedId] = useState(initialState.selectedResearchId);
   const [agentInbox, setAgentInbox] = useState<AgentResearchRequest[]>(initialState.agentInbox);
   const [radarSignals, setRadarSignals] = useState<FrontierRadarSignal[]>(initialState.radarSignals);
+  const [radarRuns, setRadarRuns] = useState<RadarRun[]>(initialState.radarRuns);
   const [sync, setSync] = useState(initialState.sync);
   const [lastSavedAt, setLastSavedAt] = useState(initialState.lastSavedAt);
   const [isHydrated, setIsHydrated] = useState(false);
@@ -109,6 +111,7 @@ export default function InvestmentDashboard() {
       setSelectedId(stored.selectedResearchId || stored.researchItems[0]?.id || "");
       setAgentInbox(stored.agentInbox);
       setRadarSignals(stored.radarSignals);
+      setRadarRuns(stored.radarRuns);
       setSync(stored.sync);
       setLastSavedAt(stored.lastSavedAt);
       setSaveStatus(stored.schemaVersion === 2 ? "Loaded saved workspace from this browser." : "Migrated saved workspace into the current schema.");
@@ -127,9 +130,10 @@ export default function InvestmentDashboard() {
     selectedResearchId: selected?.id ?? selectedId,
     agentInbox,
     radarSignals,
+    radarRuns,
     sync,
     lastSavedAt,
-  }), [agentInbox, items, lastSavedAt, profile, radarSignals, selected?.id, selectedId, sync]);
+  }), [agentInbox, items, lastSavedAt, profile, radarRuns, radarSignals, selected?.id, selectedId, sync]);
 
   useEffect(() => {
     if (!isHydrated) return;
@@ -152,10 +156,12 @@ export default function InvestmentDashboard() {
   }, [items]);
 
   const exportJson = useMemo(() => JSON.stringify(currentState, null, 2), [currentState]);
-  const highestPriority = useMemo(() => [...items].sort((a, b) => {
+  const latestRadarRun = radarRuns[0];
+  const fallbackPriority = useMemo(() => [...items].sort((a, b) => {
     const score = (item: ResearchItem) => item.sources.length * 2 - item.openQuestions.length + (item.status === "memo" ? 3 : 0) + (item.confidence === "high" ? 2 : item.confidence === "medium" ? 1 : 0);
     return score(b) - score(a);
   })[0], [items]);
+  const highestPriority = latestRadarRun?.opportunities[0] ?? fallbackPriority;
 
   function addResearchItem() {
     if (!draftTitle.trim()) return;
@@ -260,19 +266,33 @@ export default function InvestmentDashboard() {
       if (!response.ok) throw new Error("Radar scan failed");
       const payload = await response.json() as { mode: string; opportunities: ResearchItem[] };
       const incoming = payload.opportunities ?? [];
-      setItems((current) => {
-        const existingTitles = new Set(current.map((item) => item.title.toLowerCase()));
-        const fresh = incoming.filter((item) => !existingTitles.has(item.title.toLowerCase()));
-        return [...fresh, ...current];
-      });
-      if (incoming[0]) setSelectedId(incoming[0].id);
-      setRadarScanStatus(`Radar found ${incoming.length} evidence-backed opportunity memo(s). Mode: ${payload.mode}. Human review still required.`);
+      const run = createRadarRun({ mode: payload.mode, opportunities: incoming, previousRun: radarRuns[0] });
+      setRadarRuns((current) => [run, ...current].slice(0, 12));
+      setRadarScanStatus(`Saved radar run: ${incoming.length} opportunity memo(s), ${run.liveSourceCount} live sources, ${run.changes.newOpportunities.length} new opportunity(ies). Mode: ${payload.mode}. Promote only what deserves research.`);
       setActiveView("radar");
     } catch {
       setRadarScanStatus("Radar scan failed. Keep using manual capture while we reconnect the research agent.");
     } finally {
       setIsScanningRadar(false);
     }
+  }
+
+  function promoteRadarOpportunity(opportunity: ResearchItem) {
+    const next: ResearchItem = {
+      ...opportunity,
+      id: uid("research"),
+      status: "memo",
+      createdAt: today(),
+      agentDrafts: opportunity.agentDrafts.map((draft) => ({ ...draft, id: uid("draft") })),
+      decisionSnapshots: [],
+    };
+    setItems((current) => {
+      const existingIndex = current.findIndex((item) => item.title.toLowerCase() === opportunity.title.toLowerCase());
+      if (existingIndex === -1) return [next, ...current];
+      return current.map((item, index) => index === existingIndex ? { ...item, ...next, id: item.id, decisionSnapshots: item.decisionSnapshots } : item);
+    });
+    setSelectedId(next.id);
+    setActiveView("memo");
   }
 
   function resetWorkspace() {
@@ -282,6 +302,7 @@ export default function InvestmentDashboard() {
     setSelectedId(next.selectedResearchId);
     setAgentInbox(next.agentInbox);
     setRadarSignals(next.radarSignals);
+    setRadarRuns(next.radarRuns);
     setSync(next.sync);
     setLastSavedAt(next.lastSavedAt);
     setImportDraft("");
@@ -299,6 +320,7 @@ export default function InvestmentDashboard() {
     setSelectedId(parsed.selectedResearchId || parsed.researchItems[0]?.id || "");
     setAgentInbox(parsed.agentInbox);
     setRadarSignals(parsed.radarSignals);
+    setRadarRuns(parsed.radarRuns);
     setSync(parsed.sync);
     setLastSavedAt(parsed.lastSavedAt);
     setImportMessage("Imported workspace JSON. It will autosave locally.");
@@ -351,7 +373,7 @@ export default function InvestmentDashboard() {
           <Metric label="Trust score" value={trust?.score ?? 0} tone={trust?.decisionReady ? undefined : "warn"} />
         </div>
 
-        {activeView === "radar" ? <RadarView highestPriority={highestPriority} signals={radarSignals} theme={radarTheme} signal={radarSignal} scanStatus={radarScanStatus} isScanning={isScanningRadar} onAdd={addRadarSignal} onPromote={promoteRadarSignal} onRunScan={runAutonomousRadar} onSignalChange={setRadarSignal} onThemeChange={setRadarTheme} onOpenMemo={() => setActiveView("memo")} /> : null}
+        {activeView === "radar" ? <RadarView highestPriority={highestPriority} latestRun={latestRadarRun} radarRuns={radarRuns} signals={radarSignals} theme={radarTheme} signal={radarSignal} scanStatus={radarScanStatus} isScanning={isScanningRadar} onAdd={addRadarSignal} onPromote={promoteRadarSignal} onPromoteOpportunity={promoteRadarOpportunity} onRunScan={runAutonomousRadar} onSignalChange={setRadarSignal} onThemeChange={setRadarTheme} onOpenMemo={() => setActiveView("memo")} /> : null}
         {activeView === "inbox" ? <InboxView items={items} selectedId={selected?.id ?? ""} draftAssetClass={draftAssetClass} draftTheme={draftTheme} draftTitle={draftTitle} draftWhyNow={draftWhyNow} agentInbox={agentInbox} agentRequestDraft={agentRequestDraft} onAdd={addResearchItem} onAssetClassChange={setDraftAssetClass} onDraft={draftSelectedRequest} onAgentDraftChange={setAgentRequestDraft} onQueueAgent={queueAgentRequest} onSelect={setSelectedId} onThemeChange={setDraftTheme} onTitleChange={setDraftTitle} onWhyNowChange={setDraftWhyNow} /> : null}
         {activeView === "memo" && selected ? <MemoView item={selected} update={updateSelected} sourceClaim={sourceClaim} sourceTitle={sourceTitle} sourceUrl={sourceUrl} onAddEvidence={addEvidence} onClaimChange={setSourceClaim} onTitleChange={setSourceTitle} onUrlChange={setSourceUrl} /> : null}
         {activeView === "fit" && selected && fit ? <FitView item={selected} profile={profile} fit={fit} /> : null}
@@ -393,18 +415,45 @@ function Select<T extends string>({ label, value, onChange, options }: { label: 
   return <label className="field"><span>{label}</span><select value={value} onChange={(event) => onChange(event.target.value as T)}>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>;
 }
 
-function RadarView({ highestPriority, signals, theme, signal, scanStatus, isScanning, onAdd, onPromote, onRunScan, onSignalChange, onThemeChange, onOpenMemo }: { highestPriority?: ResearchItem; signals: FrontierRadarSignal[]; theme: string; signal: string; scanStatus: string; isScanning: boolean; onAdd: () => void; onPromote: (signal: FrontierRadarSignal) => void; onRunScan: () => void; onSignalChange: (value: string) => void; onThemeChange: (value: string) => void; onOpenMemo: () => void }) {
+function RadarView({ highestPriority, latestRun, radarRuns, signals, theme, signal, scanStatus, isScanning, onAdd, onPromote, onPromoteOpportunity, onRunScan, onSignalChange, onThemeChange, onOpenMemo }: { highestPriority?: ResearchItem; latestRun?: RadarRun; radarRuns: RadarRun[]; signals: FrontierRadarSignal[]; theme: string; signal: string; scanStatus: string; isScanning: boolean; onAdd: () => void; onPromote: (signal: FrontierRadarSignal) => void; onPromoteOpportunity: (item: ResearchItem) => void; onRunScan: () => void; onSignalChange: (value: string) => void; onThemeChange: (value: string) => void; onOpenMemo: () => void }) {
   const evidenceCoverage = highestPriority ? evaluateEvidenceCoverage(highestPriority) : null;
   return <div className="view-grid two-col">
-    <Panel title="Autonomous opportunity radar" subtitle="Let the agent surface evidence-backed opportunities for human review." action={<button className="primary-button" onClick={onRunScan} disabled={isScanning}>{isScanning ? "Scanning…" : "Run radar scan"}</button>}>
+    <Panel title="Autonomous opportunity radar" subtitle="Run live research scans, save each run, and promote only the opportunities worth memo work." action={<button className="primary-button" onClick={onRunScan} disabled={isScanning}>{isScanning ? "Scanning…" : "Run radar scan"}</button>}>
       <div className="agent-status"><p className="eyebrow">Agent status</p><p>{scanStatus}</p></div>
-      {highestPriority ? <div className="priority-card"><p className="tag">{highestPriority.theme}</p><h3>{highestPriority.title}</h3><p>{highestPriority.whyNow}</p><div className="checklist"><span>{highestPriority.sources.length} source(s)</span><span>{evidenceCoverage?.liveSearchCount ?? 0} live</span><span>{evidenceCoverage?.primaryCount ?? 0} primary</span><span>{highestPriority.openQuestions.length} open question(s)</span><span>{highestPriority.confidence} confidence</span></div><strong>Next: {nextActionFor(highestPriority)}</strong><button className="secondary-button priority-action" onClick={onOpenMemo}>Open evidence review</button></div> : <EmptyState text="No research items yet. Run radar scan or add your first idea from Inbox." />}
+      {latestRun ? <RadarRunSummary run={latestRun} /> : null}
+      {highestPriority ? <div className="priority-card"><p className="tag">{highestPriority.theme}</p><h3>{highestPriority.title}</h3><p>{highestPriority.whyNow}</p><div className="checklist"><span>{highestPriority.sources.length} source(s)</span><span>{evidenceCoverage?.liveSearchCount ?? 0} live</span><span>{evidenceCoverage?.primaryCount ?? 0} primary</span><span>{highestPriority.openQuestions.length} open question(s)</span><span>{highestPriority.confidence} confidence</span></div><strong>Next: {nextActionFor(highestPriority)}</strong><div className="button-row priority-action"><button className="secondary-button" onClick={() => onPromoteOpportunity(highestPriority)}>Promote to memo</button><button className="secondary-button" onClick={onOpenMemo}>Open active memo</button></div></div> : <EmptyState text="No radar run yet. Run radar scan to save a dated evidence snapshot." />}
+    </Panel>
+    <Panel title="Saved radar runs" subtitle="Audit trail of scans and what changed since the previous run.">
+      <div className="card-list">{radarRuns.length === 0 ? <EmptyState text="No saved radar runs yet." /> : radarRuns.map((run) => <RadarRunCard key={run.id} run={run} onPromoteOpportunity={onPromoteOpportunity} />)}</div>
     </Panel>
     <Panel title="Manual frontier radar" subtitle="Signals you may want to promote into research.">
       <div className="compact-form"><Input label="Theme" value={theme} onChange={onThemeChange} placeholder="e.g. Edge AI" /><Textarea label="Signal" value={signal} onChange={onSignalChange} placeholder="What changed, and why might it matter?" rows={3} /><button className="primary-button" onClick={onAdd}>Add signal</button></div>
       <div className="card-list">{signals.map((item) => <article key={item.id} className="signal-card"><div><p className="tag">{item.urgency} urgency</p><h4>{item.theme}</h4></div><p>{item.signal}</p><p><strong>Next:</strong> {item.nextAction}</p><button className="secondary-button" onClick={() => onPromote(item)}>Promote to inbox</button></article>)}</div>
     </Panel>
   </div>;
+}
+
+function RadarRunSummary({ run }: { run: RadarRun }) {
+  return <div className="radar-run-summary">
+    <InfoTile label="Saved run" value={new Date(run.generatedAt).toLocaleString()} />
+    <InfoTile label="Mode" value={run.mode.replaceAll("-", " ")} />
+    <InfoTile label="Live sources" value={String(run.liveSourceCount)} />
+    <InfoTile label="Evidence gaps" value={String(run.evidenceGapCount)} />
+  </div>;
+}
+
+function RadarRunCard({ run, onPromoteOpportunity }: { run: RadarRun; onPromoteOpportunity: (item: ResearchItem) => void }) {
+  return <article className="mini-card radar-run-card">
+    <div className="source-card-header"><p className="tag">{new Date(run.generatedAt).toLocaleString()}</p><p className="tag">{run.mode}</p></div>
+    <h4>{run.opportunityCount} opportunities · {run.sourceCount} sources</h4>
+    <div className="checklist"><span>{run.liveSourceCount} live</span><span>{run.primarySourceCount} primary</span><span>{run.evidenceGapCount} gaps</span></div>
+    <ChangeList title="What changed" items={[...run.changes.newOpportunities.map((item) => `New opportunity: ${item}`), ...run.changes.improvedEvidenceTitles.map((item) => `Evidence improved: ${item}`), ...run.changes.worsenedEvidenceTitles.map((item) => `Evidence worsened: ${item}`), run.changes.newSourceUrls.length > 0 ? `${run.changes.newSourceUrls.length} new source link(s)` : "", run.changes.removedSourceUrls.length > 0 ? `${run.changes.removedSourceUrls.length} removed source link(s)` : ""].filter(Boolean)} empty="No material change versus previous scan." />
+    <details className="run-details"><summary>Review opportunities from this run</summary><div className="card-list">{run.opportunities.map((item) => <article key={item.id} className="mini-card"><p className="tag">{item.theme}</p><h4>{item.title}</h4><p>{item.whyNow}</p><div className="checklist"><span>{item.sources.length} sources</span><span>{evaluateEvidenceCoverage(item).liveSearchCount} live</span><span>{evaluateEvidenceCoverage(item).primaryCount} primary</span></div><button className="secondary-button" onClick={() => onPromoteOpportunity(item)}>Promote to memo</button></article>)}</div></details>
+  </article>;
+}
+
+function ChangeList({ title, items, empty }: { title: string; items: string[]; empty: string }) {
+  return <div className={items.length > 0 ? "warning-box" : "insight-box"}><h4>{title}</h4>{items.length > 0 ? <ul>{items.map((item) => <li key={item}>{item}</li>)}</ul> : <p>{empty}</p>}</div>;
 }
 
 function InboxView({ items, selectedId, draftAssetClass, draftTheme, draftTitle, draftWhyNow, agentInbox, agentRequestDraft, onAdd, onAssetClassChange, onDraft, onAgentDraftChange, onQueueAgent, onSelect, onThemeChange, onTitleChange, onWhyNowChange }: { items: ResearchItem[]; selectedId: string; draftAssetClass: string; draftTheme: string; draftTitle: string; draftWhyNow: string; agentInbox: AgentResearchRequest[]; agentRequestDraft: string; onAdd: () => void; onAssetClassChange: (value: string) => void; onDraft: (request: AgentResearchRequest) => void; onAgentDraftChange: (value: string) => void; onQueueAgent: () => void; onSelect: (id: string) => void; onThemeChange: (value: string) => void; onTitleChange: (value: string) => void; onWhyNowChange: (value: string) => void }) {

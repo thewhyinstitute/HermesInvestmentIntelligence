@@ -296,6 +296,10 @@ a:hover { text-decoration: underline; }
 .source-review h4 { margin: 0 0 4px; }
 .source-review p { margin: 0; }
 .source-warnings { margin: 12px 0; padding-left: 20px; color: #713f12; font-weight: 700; }
+.radar-run-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 14px 0; }
+.radar-run-card .checklist span { background: #f1f5f9; color: #334155; }
+.run-details { margin-top: 12px; }
+.run-details summary { cursor: pointer; font-weight: 800; color: var(--accent-dark); }
 
 .settings-status { display: grid; gap: 8px; color: #475569; }
 .settings-status p { margin: 0; overflow-wrap: anywhere; }
@@ -328,5 +332,5 @@ a:hover { text-decoration: underline; }
   .workspace { gap: 14px; }
   .hero-card { display: grid; padding: 22px; }
   .hero-actions { align-self: stretch; }
-  .metric-grid, .form-grid.two, .form-grid.three, .fit-grid, .evidence-score-row { grid-template-columns: 1fr; }
+  .metric-grid, .form-grid.two, .form-grid.three, .fit-grid, .evidence-score-row, .radar-run-summary { grid-template-columns: 1fr; }
 }

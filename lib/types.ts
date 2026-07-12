@@ -101,6 +101,28 @@ export interface FrontierRadarSignal {
   lastReviewedAt: string;
 }
 
+export interface RadarRunChangeSummary {
+  newOpportunities: string[];
+  repeatedOpportunities: string[];
+  newSourceUrls: string[];
+  removedSourceUrls: string[];
+  improvedEvidenceTitles: string[];
+  worsenedEvidenceTitles: string[];
+}
+
+export interface RadarRun {
+  id: string;
+  generatedAt: string;
+  mode: string;
+  opportunityCount: number;
+  sourceCount: number;
+  liveSourceCount: number;
+  primarySourceCount: number;
+  evidenceGapCount: number;
+  opportunities: ResearchItem[];
+  changes: RadarRunChangeSummary;
+}
+
 export interface CloudSyncState {
   mode: SyncMode;
   provider: "none" | "supabase_ready" | "supabase_connected";
@@ -116,6 +138,7 @@ export interface InvestmentAppState {
   selectedResearchId: string;
   agentInbox: AgentResearchRequest[];
   radarSignals: FrontierRadarSignal[];
+  radarRuns: RadarRun[];
   sync: CloudSyncState;
   lastSavedAt: string;
 }
