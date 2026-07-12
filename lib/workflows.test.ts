@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { defaultProfile, sampleAgentInbox, sampleResearchItems } from "./sample-data";
-import { createAgentDraftFromRequest, createDecisionSnapshot, createRadarSignal, createResearchRequest, createStructuredMemoDraft, evaluateMemoTrust, scorePortfolioFit } from "./workflows";
+import { createAgentDraftFromRequest, createDecisionSnapshot, createRadarSignal, createResearchRequest, createStructuredMemoDraft, evaluateEvidenceCoverage, evaluateMemoTrust, reviewEvidenceSource, scorePortfolioFit } from "./workflows";
 
 describe("investment workflow helpers", () => {
   it("creates queued agent research requests with approval boundaries", () => {
@@ -65,6 +65,59 @@ describe("investment workflow helpers", () => {
     expect(trust.decisionReady).toBe(true);
     expect(trust.score).toBeGreaterThanOrEqual(80);
     expect(trust.label).toBe("Decision-ready draft");
+  });
+
+  it("reviews live-search evidence as discovery until primary sources confirm it", () => {
+    const review = reviewEvidenceSource({
+      id: "tavily-1",
+      title: "Market commentary",
+      url: "https://example-research.com/ai-grid",
+      sourceType: "analysis",
+      checkedAt: "2026-07-12",
+      quality: "medium",
+      claim: "Search result says AI grid demand may rise."
+    });
+
+    expect(review.origin).toBe("Live search");
+    expect(review.isPrimary).toBe(false);
+    expect(review.warnings).toContain("Live search result — verify facts against a primary or official source.");
+  });
+
+  it("summarizes evidence gaps without letting live links inflate readiness", () => {
+    const item = {
+      ...sampleResearchItems[0],
+      openQuestions: [],
+      risks: ["Valuation risk", "Concentration risk"],
+      sources: [
+        {
+          id: "tavily-1",
+          title: "AI infrastructure article",
+          url: "https://research.example.org/ai-infra",
+          sourceType: "analysis" as const,
+          checkedAt: "2026-07-12",
+          quality: "medium" as const,
+          claim: "A live search lead for the theme."
+        },
+        {
+          id: "tavily-2",
+          title: "Second article",
+          url: "https://media.example.org/grid",
+          sourceType: "news" as const,
+          checkedAt: "2026-07-12",
+          quality: "medium" as const,
+          claim: "Another live search lead."
+        }
+      ]
+    };
+
+    const coverage = evaluateEvidenceCoverage(item);
+    const trust = evaluateMemoTrust(item);
+
+    expect(coverage.liveSearchCount).toBe(2);
+    expect(coverage.primaryCount).toBe(0);
+    expect(coverage.gaps).toContain("Add at least one primary or official source: issuer, filing, regulator, or market-data evidence.");
+    expect(trust.decisionReady).toBe(false);
+    expect(trust.missingEvidence).toContain("Confirm live-search leads against at least one primary or official source.");
   });
 
   it("creates a structured memo draft from a raw research idea", () => {

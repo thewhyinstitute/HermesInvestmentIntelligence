@@ -1,4 +1,4 @@
-import type { AgentDraft, AgentResearchRequest, DecisionSnapshot, InvestmentProfile, ResearchItem } from "./types";
+import type { AgentDraft, AgentResearchRequest, DecisionSnapshot, EvidenceSource, InvestmentProfile, ResearchItem } from "./types";
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -6,6 +6,14 @@ function today() {
 
 function now() {
   return new Date().toISOString();
+}
+
+function getSourceHostname(url: string) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "unverified-url";
+  }
 }
 
 export function createResearchRequest(rawRequest: string, linkedResearchItemId = ""): AgentResearchRequest {
@@ -80,13 +88,75 @@ export function createStructuredMemoDraft(title: string, theme: string, assetCla
   };
 }
 
+export function reviewEvidenceSource(source: EvidenceSource) {
+  const normalizedUrl = source.url.toLowerCase();
+  const hostname = getSourceHostname(source.url);
+  const isPlaceholder = normalizedUrl.includes("example.com") || normalizedUrl.includes("replace-with");
+  const isLiveSearch = source.id.startsWith("tavily-");
+  const isPrimary = source.sourceType === "issuer" || source.sourceType === "filing" || source.sourceType === "regulator" || source.sourceType === "market_data";
+  const isHighTrust = source.quality === "high" || isPrimary;
+  const warnings = [
+    isPlaceholder ? "Placeholder URL — replace before relying on this memo." : "",
+    source.quality === "low" ? "Low-quality source — useful only as a lead, not decision evidence." : "",
+    isLiveSearch && !isPrimary ? "Live search result — verify facts against a primary or official source." : "",
+    !source.claim.trim() ? "Missing claim summary." : ""
+  ].filter(Boolean);
+
+  return {
+    hostname,
+    origin: isLiveSearch ? "Live search" : "Curated",
+    isLiveSearch,
+    isPrimary,
+    isHighTrust,
+    warnings,
+    label: isPrimary ? "Primary / official" : isHighTrust ? "High-quality context" : source.quality === "medium" ? "Context source" : "Weak lead",
+    reason: isPrimary
+      ? "Can support core memo claims if the linked page confirms the detail."
+      : isLiveSearch
+        ? "Good for discovery; needs primary-source confirmation before decision capture."
+        : "Useful context; do not treat as sufficient by itself."
+  };
+}
+
+export function evaluateEvidenceCoverage(item: ResearchItem) {
+  const sourceReviews = item.sources.map(reviewEvidenceSource);
+  const liveSearchCount = sourceReviews.filter((review) => review.isLiveSearch).length;
+  const curatedCount = item.sources.length - liveSearchCount;
+  const primaryCount = sourceReviews.filter((review) => review.isPrimary).length;
+  const highTrustCount = sourceReviews.filter((review) => review.isHighTrust).length;
+  const weakCount = sourceReviews.filter((review) => review.warnings.length > 0 || !review.isHighTrust).length;
+  const duplicateUrlCount = item.sources.length - new Set(item.sources.map((source) => source.url)).size;
+  const gaps = [
+    item.sources.length < 2 ? "Add at least two independent sources before decision capture." : "",
+    primaryCount === 0 ? "Add at least one primary or official source: issuer, filing, regulator, or market-data evidence." : "",
+    liveSearchCount > 0 && primaryCount === 0 ? "Live search found leads, but none are primary-source proof yet." : "",
+    duplicateUrlCount > 0 ? "Remove duplicate source URLs so evidence count does not inflate trust." : "",
+    item.openQuestions.length > 0 ? "Resolve open questions or convert them into targeted source requests." : "",
+    item.risks.length < 2 ? "Document at least two concrete downside risks." : "",
+    item.thesis.toLowerCase().includes("pending") || !item.thesis.trim() ? "Write a falsifiable thesis before decision review." : ""
+  ].filter(Boolean);
+
+  return {
+    sourceReviews,
+    liveSearchCount,
+    curatedCount,
+    primaryCount,
+    highTrustCount,
+    weakCount,
+    duplicateUrlCount,
+    gaps,
+    summary: `${primaryCount} primary/official · ${liveSearchCount} live search · ${curatedCount} curated · ${weakCount} need review`
+  };
+}
+
 export function evaluateMemoTrust(item: ResearchItem) {
   const missingEvidence: string[] = [];
   const warnings: string[] = [];
   let score = 100;
 
+  const evidenceCoverage = evaluateEvidenceCoverage(item);
   const placeholderSources = item.sources.filter((source) => source.url.includes("example.com") || source.url.includes("replace-with"));
-  const highQualitySources = item.sources.filter((source) => source.quality === "high" || source.sourceType === "issuer" || source.sourceType === "filing" || source.sourceType === "regulator");
+  const highQualitySources = item.sources.filter((source) => reviewEvidenceSource(source).isHighTrust);
 
   if (item.sources.length === 0) {
     score -= 35;
@@ -104,6 +174,16 @@ export function evaluateMemoTrust(item: ResearchItem) {
   if (highQualitySources.length === 0) {
     score -= 15;
     missingEvidence.push("Add at least one primary/high-quality source such as issuer, filing, regulator, or market-data evidence.");
+  }
+
+  if (evidenceCoverage.liveSearchCount > 0 && evidenceCoverage.primaryCount === 0) {
+    score -= 10;
+    missingEvidence.push("Confirm live-search leads against at least one primary or official source.");
+  }
+
+  if (evidenceCoverage.duplicateUrlCount > 0) {
+    score -= 8;
+    warnings.push("Remove duplicate source URLs so evidence count does not inflate trust.");
   }
 
   if (item.openQuestions.length > 0) {

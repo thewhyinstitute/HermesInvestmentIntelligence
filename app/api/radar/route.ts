@@ -12,6 +12,29 @@ interface TavilyResult {
   score?: number;
 }
 
+function classifySearchResult(url: string): Pick<EvidenceSource, "sourceType" | "quality"> {
+  let hostname = "";
+  try {
+    hostname = new URL(url).hostname.toLowerCase();
+  } catch {
+    return { sourceType: "other", quality: "low" };
+  }
+
+  if (hostname.includes("sec.gov") || hostname.includes("mas.gov.sg") || hostname.includes("treasury.gov")) {
+    return { sourceType: "regulator", quality: "high" };
+  }
+  if (hostname.includes("iea.org") || hostname.includes("worldbank.org") || hostname.includes("imf.org") || hostname.includes("oecd.org")) {
+    return { sourceType: "analysis", quality: "high" };
+  }
+  if (hostname.includes("ishares.com") || hostname.includes("vanguard") || hostname.includes("spdr") || hostname.includes("blackrock")) {
+    return { sourceType: "issuer", quality: "high" };
+  }
+  if (hostname.includes("bloomberg") || hostname.includes("reuters") || hostname.includes("ft.com") || hostname.includes("wsj.com")) {
+    return { sourceType: "news", quality: "medium" };
+  }
+  return { sourceType: "analysis", quality: "medium" };
+}
+
 async function tavilySearch(query: string): Promise<EvidenceSource[]> {
   const apiKey = process.env.TAVILY_API_KEY;
   if (!apiKey) return [];
@@ -33,15 +56,18 @@ async function tavilySearch(query: string): Promise<EvidenceSource[]> {
   const payload = await response.json() as { results?: TavilyResult[] };
   return (payload.results ?? [])
     .filter((result) => result.title && result.url)
-    .map((result, index) => ({
-      id: `tavily-${Date.now()}-${index}`,
-      title: result.title ?? "Radar evidence",
-      url: result.url ?? "",
-      sourceType: "analysis" as const,
-      checkedAt: new Date().toISOString().slice(0, 10),
-      quality: (result.score && result.score > 0.7 ? "high" : "medium") as EvidenceSource["quality"],
-      claim: result.content ? result.content.slice(0, 240) : "External search result surfaced for human verification."
-    }));
+    .map((result, index) => {
+      const classification = classifySearchResult(result.url ?? "");
+      return {
+        id: `tavily-${Date.now()}-${index}`,
+        title: result.title ?? "Radar evidence",
+        url: result.url ?? "",
+        sourceType: classification.sourceType,
+        checkedAt: new Date().toISOString().slice(0, 10),
+        quality: result.score && result.score > 0.75 ? "high" : classification.quality,
+        claim: result.content ? result.content.slice(0, 240) : "External search result surfaced for human verification."
+      };
+    });
 }
 
 function attachSearchEvidence(opportunities: ResearchItem[], searchEvidence: EvidenceSource[][]) {

@@ -16,7 +16,9 @@ import {
   createRadarSignal,
   createResearchRequest,
   createStructuredMemoDraft,
+  evaluateEvidenceCoverage,
   evaluateMemoTrust,
+  reviewEvidenceSource,
   scorePortfolioFit,
 } from "@/lib/workflows";
 import type { AgentResearchRequest, Decision, EvidenceSource, FrontierRadarSignal, InvestmentAppState, InvestmentProfile, ResearchItem, ResearchStatus } from "@/lib/types";
@@ -392,10 +394,11 @@ function Select<T extends string>({ label, value, onChange, options }: { label: 
 }
 
 function RadarView({ highestPriority, signals, theme, signal, scanStatus, isScanning, onAdd, onPromote, onRunScan, onSignalChange, onThemeChange, onOpenMemo }: { highestPriority?: ResearchItem; signals: FrontierRadarSignal[]; theme: string; signal: string; scanStatus: string; isScanning: boolean; onAdd: () => void; onPromote: (signal: FrontierRadarSignal) => void; onRunScan: () => void; onSignalChange: (value: string) => void; onThemeChange: (value: string) => void; onOpenMemo: () => void }) {
+  const evidenceCoverage = highestPriority ? evaluateEvidenceCoverage(highestPriority) : null;
   return <div className="view-grid two-col">
     <Panel title="Autonomous opportunity radar" subtitle="Let the agent surface evidence-backed opportunities for human review." action={<button className="primary-button" onClick={onRunScan} disabled={isScanning}>{isScanning ? "Scanning…" : "Run radar scan"}</button>}>
       <div className="agent-status"><p className="eyebrow">Agent status</p><p>{scanStatus}</p></div>
-      {highestPriority ? <div className="priority-card"><p className="tag">{highestPriority.theme}</p><h3>{highestPriority.title}</h3><p>{highestPriority.whyNow}</p><div className="checklist"><span>{highestPriority.sources.length} source(s)</span><span>{highestPriority.openQuestions.length} open question(s)</span><span>{highestPriority.confidence} confidence</span></div><strong>Next: {nextActionFor(highestPriority)}</strong><button className="secondary-button priority-action" onClick={onOpenMemo}>Open memo</button></div> : <EmptyState text="No research items yet. Run radar scan or add your first idea from Inbox." />}
+      {highestPriority ? <div className="priority-card"><p className="tag">{highestPriority.theme}</p><h3>{highestPriority.title}</h3><p>{highestPriority.whyNow}</p><div className="checklist"><span>{highestPriority.sources.length} source(s)</span><span>{evidenceCoverage?.liveSearchCount ?? 0} live</span><span>{evidenceCoverage?.primaryCount ?? 0} primary</span><span>{highestPriority.openQuestions.length} open question(s)</span><span>{highestPriority.confidence} confidence</span></div><strong>Next: {nextActionFor(highestPriority)}</strong><button className="secondary-button priority-action" onClick={onOpenMemo}>Open evidence review</button></div> : <EmptyState text="No research items yet. Run radar scan or add your first idea from Inbox." />}
     </Panel>
     <Panel title="Manual frontier radar" subtitle="Signals you may want to promote into research.">
       <div className="compact-form"><Input label="Theme" value={theme} onChange={onThemeChange} placeholder="e.g. Edge AI" /><Textarea label="Signal" value={signal} onChange={onSignalChange} placeholder="What changed, and why might it matter?" rows={3} /><button className="primary-button" onClick={onAdd}>Add signal</button></div>
@@ -421,16 +424,18 @@ function InboxView({ items, selectedId, draftAssetClass, draftTheme, draftTitle,
 
 function MemoView({ item, update, sourceClaim, sourceTitle, sourceUrl, onAddEvidence, onClaimChange, onTitleChange, onUrlChange }: { item: ResearchItem; update: (patch: Partial<ResearchItem>) => void; sourceClaim: string; sourceTitle: string; sourceUrl: string; onAddEvidence: () => void; onClaimChange: (value: string) => void; onTitleChange: (value: string) => void; onUrlChange: (value: string) => void }) {
   const trust = evaluateMemoTrust(item);
+  const evidenceCoverage = evaluateEvidenceCoverage(item);
   return <div className="view-grid memo-grid">
     <Panel title="Active memo" subtitle="Turn a raw idea into a source-backed investment memo.">
       <TrustStatus trust={trust} />
+      <EvidenceGapPanel coverage={evidenceCoverage} />
       <div className="memo-header"><div><p className="tag">{item.theme}</p><h3>{item.title}</h3></div><span className="status-pill">{statusLabels[item.status]}</span></div>
       <div className="form-grid three"><Select label="Lifecycle" value={item.status} onChange={(status) => update({ status })} options={(Object.keys(statusLabels) as ResearchStatus[]).map((value) => ({ value, label: statusLabels[value] }))} /><Select label="Decision" value={item.decision} onChange={(decision) => update({ decision })} options={(Object.keys(decisionLabels) as Decision[]).map((value) => ({ value, label: decisionLabels[value] }))} /><Select label="Confidence" value={item.confidence} onChange={(confidence) => update({ confidence })} options={["low", "medium", "high"].map((value) => ({ value: value as ResearchItem["confidence"], label: value }))} /></div>
       <div className="compact-form"><Input label="Title" value={item.title} onChange={(title) => update({ title })} /><Textarea label="Why this may matter now" value={item.whyNow} onChange={(whyNow) => update({ whyNow })} /><Textarea label="Thesis" value={item.thesis} onChange={(thesis) => update({ thesis })} /><Textarea label="Assumptions" value={item.assumptions.join("\n")} onChange={(value) => update({ assumptions: splitLines(value) })} /><Textarea label="Open questions" value={item.openQuestions.join("\n")} onChange={(value) => update({ openQuestions: splitLines(value) })} /><Textarea label="Key risks" value={item.risks.join("\n")} onChange={(value) => update({ risks: splitLines(value) })} /></div>
     </Panel>
     <Panel title="Evidence" subtitle="Every important claim needs a source.">
       <div className="compact-form"><Input label="Source title" value={sourceTitle} onChange={onTitleChange} placeholder="Issuer factsheet, 10-K, fund page..." /><Input label="Source URL" value={sourceUrl} onChange={onUrlChange} placeholder="https://" /><Textarea label="Claim supported" value={sourceClaim} onChange={onClaimChange} placeholder="What does this source prove or challenge?" rows={3} /><button className="primary-button" onClick={onAddEvidence}>Attach evidence</button></div>
-      <div className="card-list">{item.sources.length === 0 ? <EmptyState text="No evidence yet. Do not finalize without sources." /> : item.sources.map((source) => <article key={source.id} className="mini-card"><p className="tag">{sourceTypeLabels[source.sourceType]} · {source.quality} · checked {source.checkedAt}</p><h4>{source.title}</h4><p>{source.claim}</p><a href={source.url} target="_blank" rel="noreferrer">Open source</a></article>)}</div>
+      <div className="card-list">{item.sources.length === 0 ? <EmptyState text="No evidence yet. Do not finalize without sources." /> : item.sources.map((source) => <EvidenceSourceCard key={source.id} source={source} />)}</div>
     </Panel>
   </div>;
 }
@@ -442,6 +447,39 @@ function TrustStatus({ trust }: { trust: ReturnType<typeof evaluateMemoTrust> })
     <p>{trust.requiredNextStep}</p>
     {issues.length > 0 ? <ul>{issues.map((issue) => <li key={issue}>{issue}</li>)}</ul> : <p className="ready-copy">Evidence, risks, and questions are clean enough for human decision review.</p>}
   </div>;
+}
+
+function EvidenceGapPanel({ coverage }: { coverage: ReturnType<typeof evaluateEvidenceCoverage> }) {
+  return <div className="evidence-gap-panel">
+    <div className="evidence-score-row">
+      <InfoTile label="Primary / official" value={String(coverage.primaryCount)} />
+      <InfoTile label="Live search" value={String(coverage.liveSearchCount)} />
+      <InfoTile label="Curated" value={String(coverage.curatedCount)} />
+      <InfoTile label="Needs review" value={String(coverage.weakCount)} />
+    </div>
+    <div className={coverage.gaps.length > 0 ? "warning-box" : "insight-box"}>
+      <h4>{coverage.gaps.length > 0 ? "Evidence gaps" : "Evidence coverage"}</h4>
+      {coverage.gaps.length > 0
+        ? <ul>{coverage.gaps.map((gap) => <li key={gap}>{gap}</li>)}</ul>
+        : <p>Source coverage is sufficient for human memo review. Still verify claims before any decision snapshot.</p>}
+    </div>
+  </div>;
+}
+
+function EvidenceSourceCard({ source }: { source: EvidenceSource }) {
+  const review = reviewEvidenceSource(source);
+  return <article className={`mini-card evidence-card ${review.isPrimary ? "is-primary" : ""}`}>
+    <div className="source-card-header">
+      <p className="tag">{review.origin}</p>
+      <p className="tag">{sourceTypeLabels[source.sourceType]} · {source.quality}</p>
+    </div>
+    <h4>{source.title}</h4>
+    <p className="source-domain">{review.hostname} · checked {source.checkedAt}</p>
+    <p>{source.claim}</p>
+    <div className="insight-box source-review"><h4>{review.label}</h4><p>{review.reason}</p></div>
+    {review.warnings.length > 0 ? <ul className="source-warnings">{review.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : null}
+    <a href={source.url} target="_blank" rel="noreferrer">Open source</a>
+  </article>;
 }
 
 function FitView({ item, profile, fit }: { item: ResearchItem; profile: InvestmentProfile; fit: ReturnType<typeof scorePortfolioFit> }) {
