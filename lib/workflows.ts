@@ -242,6 +242,7 @@ export function scorePortfolioFit(item: ResearchItem, profile: InvestmentProfile
 
 export function createDecisionSnapshot(item: ResearchItem, humanRationale: string): DecisionSnapshot {
   return {
+    recommendation: item.recommendation ? JSON.parse(JSON.stringify(item.recommendation)) : undefined,
     id: `decision-${Date.now()}`,
     createdAt: now(),
     researchItemId: item.id,

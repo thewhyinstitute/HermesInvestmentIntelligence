@@ -8,6 +8,7 @@ This web workspace supports investment research and decision preparation. It doe
 
 ## Current modules
 
+- Recommendations-first shortlist: specific instruments, stance, reasons, entry conditions, risks and thesis breakers
 - Investment Profile
 - Research Inbox
 - Opportunity Lifecycle
@@ -40,6 +41,8 @@ This web workspace supports investment research and decision preparation. It doe
 
 ## Not implemented yet
 
+- Automatic current-price feed and automated valuation models (price and valuation are sourced review inputs)
+- An exhaustive investment universe (initial candidates: QQQM, GRID, IAU, SGOV, NVDA)
 - Cloud database connection
 - Authentication
 - Supabase schema deployment
@@ -88,3 +91,11 @@ npm run build
 - Every memo must separate facts, assumptions, risks, and sources
 - Decisions remain human-owned and approval-gated
 - Never store secrets, account numbers, private keys, seed phrases, or raw sensitive financial identifiers
+
+## Personal recommendations workflow
+
+Recommendations is the default view. Refresh shortlist searches for instrument-specific evidence using the existing Tavily connection; a missing or unavailable key falls back to explicitly curated instrument candidates. Discovery results do not automatically authorize buying.
+
+Open an investment case to review the ticker, exchange, valuation, entry condition, thesis breakers, alternatives and sourced price/date. Settings holds the actual-holdings and liquidity review. Consider-buying and accumulation stances are downgraded to Wait until freshness, independent evidence, memo quality and human/holdings reviews pass. Watch and Avoid remain valid outcomes. Trust/fit rankings are qualitative research priority, not return forecasts.
+
+Existing v2 browser workspaces are retained. Recommendation fields are optional and exported with the workspace. Decision snapshots preserve the investment case at capture. No market prices, target prices, expected returns or allocations are fabricated.

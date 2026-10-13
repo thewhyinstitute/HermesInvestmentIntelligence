@@ -9,6 +9,7 @@ import {
   updateStateMetadata,
 } from "./storage";
 import type { InvestmentAppState } from "./types";
+import { buildInvestmentCandidates } from "./investment-candidates";
 
 const legacyState = {
   schemaVersion: 1,
@@ -33,6 +34,13 @@ const legacyState = {
 };
 
 describe("investment state persistence", () => {
+  it("round-trips recommendation contracts and rejects malformed imports", () => {
+    const state = createInitialInvestmentState(defaultProfile, buildInvestmentCandidates(defaultProfile));
+    expect(deserializeInvestmentState(serializeInvestmentState(state))).toEqual(state);
+    const malformed = JSON.parse(serializeInvestmentState(state));
+    malformed.researchItems[0].recommendation.quote = { price: "wrong" };
+    expect(deserializeInvestmentState(JSON.stringify(malformed))).toBeNull();
+  });
   it("creates a versioned cloud-ready state from the default profile and research items", () => {
     const state = createInitialInvestmentState(defaultProfile, sampleResearchItems);
 

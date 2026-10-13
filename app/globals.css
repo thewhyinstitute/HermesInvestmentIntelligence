@@ -1,5 +1,25 @@
 @import "tailwindcss";
 
+.recommendations-view { display: grid; gap: 18px; }
+.recommendations-heading, .recommendation-record header { display: flex; justify-content: space-between; align-items: start; gap: 16px; }
+.recommendations-heading h2 { font-size: 24px; margin: 0; }
+.recommendations-heading p, .shortlist-boundary { color: var(--muted); line-height: 1.5; }
+.recommendations-toolbar { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; }
+.recommendations-toolbar .notice { flex: 1; margin: 0; }
+.recommendation-record { border: 1px solid var(--line); border-radius: 8px; background: white; padding: 20px; overflow-wrap: anywhere; }
+.recommendation-record h3 { margin: 0; font-size: 19px; }
+.recommendation-record h4 { margin: 0 0 6px; font-size: 14px; }
+.recommendation-record p, .recommendation-record li { color: #475569; line-height: 1.6; }
+.recommendation-record ul { padding-left: 20px; }
+.recommendation-reasons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 24px; margin: 18px 0; }
+.recommendation-reasons p { margin: 0 0 8px; }
+.recommendation-stance { flex-shrink: 0; padding: 6px 10px; background: #fef3c7; color: #92400e; border-radius: 4px; font-weight: 700; }
+.stance-consider_buying, .stance-accumulate { background: #dcfce7; color: #166534; }
+.stance-avoid { background: #fee2e2; color: #991b1b; }
+.recommendation-evidence { margin-bottom: 16px; border-top: 1px solid var(--line); padding-top: 14px; }
+.recommendation-evidence summary { cursor: pointer; font-weight: 700; }
+.recommendation-editor { display: grid; gap: 12px; padding-bottom: 20px; margin-bottom: 20px; border-bottom: 1px solid var(--line); }
+
 :root {
   color-scheme: light;
   --ink: #0f172a;
@@ -142,9 +162,9 @@ a:hover { text-decoration: underline; }
 
 .hero-card h2 {
   max-width: 780px;
-  font-size: clamp(2rem, 5vw, 4.6rem);
-  line-height: 0.98;
-  letter-spacing: -0.06em;
+  font-size: 28px;
+  line-height: 1.2;
+  letter-spacing: 0;
 }
 
 .hero-copy {
@@ -366,6 +386,8 @@ a:hover { text-decoration: underline; }
 }
 
 @media (max-width: 820px) {
+  .recommendation-reasons { grid-template-columns: 1fr; }
+  .recommendations-heading, .recommendation-record header { flex-direction: column; }
   .app-shell { display: block; padding: 14px; }
   .sidebar { position: static; max-height: none; margin-bottom: 16px; }
   .nav-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }

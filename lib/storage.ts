@@ -21,7 +21,9 @@ function isStringArray(value: unknown): value is string[] {
 
 function isInvestmentProfile(value: unknown): value is InvestmentProfile {
   if (!isRecord(value)) return false;
-  return isString(value.riskLevel)
+  return (value.holdingsNotes === undefined || isString(value.holdingsNotes))
+    && (value.holdingsReviewedAt === undefined || isString(value.holdingsReviewedAt))
+    && isString(value.riskLevel)
     && isString(value.horizon)
     && isString(value.liquidityNeed)
     && isStringArray(value.preferredAssets)
@@ -57,7 +59,7 @@ function isAgentDraft(value: unknown): value is AgentDraft {
 
 function isDecisionSnapshot(value: unknown): value is DecisionSnapshot {
   if (!isRecord(value)) return false;
-  return isString(value.id)
+  return (value.recommendation === undefined || isRecommendation(value.recommendation)) && isString(value.id)
     && isString(value.createdAt)
     && isString(value.researchItemId)
     && isString(value.title)
@@ -72,7 +74,7 @@ function isDecisionSnapshot(value: unknown): value is DecisionSnapshot {
 
 function isResearchItem(value: unknown): value is ResearchItem {
   if (!isRecord(value)) return false;
-  return isString(value.id)
+  return (value.recommendation === undefined || isRecommendation(value.recommendation)) && isString(value.id)
     && isString(value.title)
     && isString(value.assetClass)
     && isString(value.theme)
@@ -95,6 +97,16 @@ function isResearchItem(value: unknown): value is ResearchItem {
     && value.agentDrafts.every(isAgentDraft)
     && Array.isArray(value.decisionSnapshots)
     && value.decisionSnapshots.every(isDecisionSnapshot);
+}
+
+function isRecommendation(value: unknown) {
+  if (!isRecord(value)) return false;
+  return ["symbol", "venue", "currency", "rationale", "valuation", "entryCondition"].every(key => isString(value[key]))
+    && ["consider_buying", "accumulate", "wait", "watch", "avoid"].includes(String(value.stance))
+    && isStringArray(value.thesisBreakers) && isStringArray(value.alternatives)
+    && (value.reviewedAt === undefined || isString(value.reviewedAt))
+    && (value.quote === undefined || (isRecord(value.quote) && typeof value.quote.price === "number"
+      && Number.isFinite(value.quote.price) && isString(value.quote.asOf) && isString(value.quote.sourceUrl)));
 }
 
 function isAgentResearchRequest(value: unknown): value is AgentResearchRequest {

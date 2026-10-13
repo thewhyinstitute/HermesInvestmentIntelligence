@@ -10,6 +10,8 @@ export type AgentDraftStatus = "draft" | "reviewed" | "accepted" | "rejected";
 export type SyncMode = "browser_local" | "cloud_ready" | "cloud_connected";
 
 export interface InvestmentProfile {
+  holdingsReviewedAt?: string;
+  holdingsNotes?: string;
   riskLevel: RiskLevel;
   horizon: Horizon;
   liquidityNeed: string;
@@ -43,6 +45,7 @@ export interface AgentDraft {
 }
 
 export interface DecisionSnapshot {
+  recommendation?: InvestmentRecommendation;
   id: string;
   createdAt: string;
   researchItemId: string;
@@ -57,6 +60,7 @@ export interface DecisionSnapshot {
 }
 
 export interface ResearchItem {
+  recommendation?: InvestmentRecommendation;
   id: string;
   title: string;
   assetClass: string;
@@ -77,6 +81,22 @@ export interface ResearchItem {
   sources: EvidenceSource[];
   agentDrafts: AgentDraft[];
   decisionSnapshots: DecisionSnapshot[];
+}
+
+export type InvestmentStance = "consider_buying" | "accumulate" | "wait" | "watch" | "avoid";
+
+export interface InvestmentRecommendation {
+  symbol: string;
+  venue: string;
+  currency: string;
+  stance: InvestmentStance;
+  rationale: string;
+  valuation: string;
+  entryCondition: string;
+  thesisBreakers: string[];
+  alternatives: string[];
+  reviewedAt?: string;
+  quote?: { price: number; asOf: string; sourceUrl: string };
 }
 
 export interface AgentResearchRequest {

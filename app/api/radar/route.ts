@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { buildFallbackRadarOpportunities, buildRadarSearchQueries, mergeRadarEvidence } from "@/lib/radar-agent";
+import { mergeRadarEvidence } from "@/lib/radar-agent";
+import { buildInvestmentCandidates, investmentSearchQuery } from "@/lib/investment-candidates";
 import { defaultProfile } from "@/lib/sample-data";
 import type { EvidenceSource, InvestmentProfile, ResearchItem } from "@/lib/types";
 
@@ -81,9 +82,9 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => ({})) as { profile?: InvestmentProfile } | InvestmentProfile;
   const profile = "profile" in body && body.profile ? body.profile : ("riskLevel" in body ? body as InvestmentProfile : defaultProfile);
 
-  const opportunities = buildFallbackRadarOpportunities(profile);
-  const queries = buildRadarSearchQueries(profile);
-  const searchEvidence = await Promise.all(queries.map((query) => tavilySearch(query)));
+  const opportunities = buildInvestmentCandidates(profile);
+  const queries = opportunities.map(investmentSearchQuery);
+  const searchEvidence = await Promise.all(queries.map((query) => tavilySearch(query).catch(() => [])));
   const enriched = attachSearchEvidence(opportunities, searchEvidence);
   const usedLiveSearch = searchEvidence.some((items) => items.length > 0);
 

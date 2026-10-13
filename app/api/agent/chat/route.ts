@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { answerAgentChat, createAgentChatMessage, summarizeRunForChat } from "@/lib/agent-chat";
 import { createRadarRun } from "@/lib/radar-runs";
-import { buildRadarSearchQueries, buildTopicRadarOpportunities, mergeRadarEvidence } from "@/lib/radar-agent";
+import { mergeRadarEvidence } from "@/lib/radar-agent";
+import { buildInvestmentCandidates, investmentSearchQuery } from "@/lib/investment-candidates";
 import { defaultProfile } from "@/lib/sample-data";
 import type { AgentChatMessage, EvidenceSource, InvestmentProfile, RadarRun, ResearchItem } from "@/lib/types";
 
@@ -59,9 +60,9 @@ function attachSearchEvidence(opportunities: ResearchItem[], searchEvidence: Evi
 }
 
 async function runRadar(profile: InvestmentProfile, previousRun?: RadarRun, prompt = "") {
-  const opportunities = buildTopicRadarOpportunities(profile, prompt);
-  const queries = buildRadarSearchQueries(profile, prompt);
-  const searchEvidence = await Promise.all(queries.map((query) => tavilySearch(query)));
+  const opportunities = buildInvestmentCandidates(profile, prompt);
+  const queries = opportunities.map(investmentSearchQuery);
+  const searchEvidence = await Promise.all(queries.map((query) => tavilySearch(query).catch(() => [])));
   const enriched = attachSearchEvidence(opportunities, searchEvidence);
   const usedLiveSearch = searchEvidence.some((items) => items.length > 0);
   return createRadarRun({ mode: usedLiveSearch ? "topic-live-search-plus-curated-evidence" : "topic-curated-evidence", opportunities: enriched, previousRun });

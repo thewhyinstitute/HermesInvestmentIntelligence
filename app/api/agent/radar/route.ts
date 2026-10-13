@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createRadarRun } from "@/lib/radar-runs";
-import { buildFallbackRadarOpportunities, buildRadarSearchQueries, mergeRadarEvidence } from "@/lib/radar-agent";
+import { mergeRadarEvidence } from "@/lib/radar-agent";
+import { buildInvestmentCandidates, investmentSearchQuery } from "@/lib/investment-candidates";
 import { defaultProfile } from "@/lib/sample-data";
 import type { EvidenceSource, InvestmentProfile, RadarRun, ResearchItem } from "@/lib/types";
 
@@ -81,9 +82,9 @@ export async function POST(request: Request) {
 
   const body = await request.json().catch(() => ({})) as { profile?: InvestmentProfile; previousRun?: RadarRun; command?: string };
   const profile = body.profile ?? defaultProfile;
-  const opportunities = buildFallbackRadarOpportunities(profile);
-  const queries = buildRadarSearchQueries(profile);
-  const searchEvidence = await Promise.all(queries.map((query) => tavilySearch(query)));
+  const opportunities = buildInvestmentCandidates(profile, body.command);
+  const queries = opportunities.map(investmentSearchQuery);
+  const searchEvidence = await Promise.all(queries.map((query) => tavilySearch(query).catch(() => [])));
   const enriched = attachSearchEvidence(opportunities, searchEvidence);
   const usedLiveSearch = searchEvidence.some((items) => items.length > 0);
   const run = createRadarRun({ mode: usedLiveSearch ? "live-search-plus-curated-fallback" : "curated-fallback", opportunities: enriched, previousRun: body.previousRun });

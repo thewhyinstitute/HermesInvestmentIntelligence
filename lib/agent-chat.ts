@@ -1,4 +1,6 @@
 import { createRadarRun } from "./radar-runs";
+import { rankRecommendations } from "./recommendations";
+import { defaultProfile } from "./sample-data";
 import type { AgentChatMessage, InvestmentProfile, RadarRun, ResearchItem } from "./types";
 import { evaluateEvidenceCoverage, evaluateMemoTrust } from "./workflows";
 
@@ -31,6 +33,19 @@ export function answerAgentChat(input: { message: string; messages?: AgentChatMe
   const normalized = input.message.toLowerCase();
   const latestRun = input.latestRun;
   const selectedItem = input.selectedItem;
+
+  if (/recommend|invest in|should i buy|why.*invest/.test(normalized)) {
+    const candidates = latestRun?.opportunities ?? (selectedItem ? [selectedItem] : []);
+    const ranked = rankRecommendations(candidates, input.profile ?? defaultProfile);
+    if (!ranked.length) return "Refresh the investment shortlist first so I can explain specific instruments rather than broad themes.";
+    return ranked.slice(0, 5).map(result => [
+      `${result.item.recommendation?.symbol ?? result.item.title}: ${result.label}.`,
+      `Why: ${result.item.recommendation?.rationale || result.item.thesis}`,
+      `Entry: ${result.item.recommendation?.entryCondition || result.item.whyNow}`,
+      `Risk: ${result.item.risks.join("; ")}`,
+      `Before acting: ${result.blockers.slice(0, 3).join("; ") || "Human decision required; no trade is authorized."}`,
+    ].join("\n")).join("\n\n");
+  }
 
   if (normalized.includes("which") || normalized.includes("priority") || normalized.includes("first")) {
     const ranked = rankOpportunities(latestRun);

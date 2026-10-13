@@ -2,6 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { defaultProfile, sampleResearchItems } from "@/lib/sample-data";
+import { RecommendationsView, RecommendationEditor } from "./recommendations-view";
+import { buildInvestmentCandidates } from "@/lib/investment-candidates";
+import { evaluateRecommendation } from "@/lib/recommendations";
+import { mergeRadarEvidence } from "@/lib/radar-agent";
 import {
   createInitialInvestmentState,
   deserializeInvestmentState,
@@ -102,7 +106,7 @@ export default function InvestmentDashboard() {
   const [agentCommand, setAgentCommand] = useState("Run radar and summarize what changed.");
   const [isAskingAgent, setIsAskingAgent] = useState(false);
   const [isScanningRadar, setIsScanningRadar] = useState(false);
-  const [activeView, setActiveView] = useState<"radar" | "inbox" | "memo" | "fit" | "journal" | "settings">("radar");
+  const [activeView, setActiveView] = useState<"recommendations" | "radar" | "inbox" | "memo" | "fit" | "journal" | "settings">("recommendations");
 
   useEffect(() => {
     const stored = deserializeInvestmentState(window.localStorage.getItem(INVESTMENT_STORAGE_KEY))
@@ -148,7 +152,9 @@ export default function InvestmentDashboard() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Reflects visible autosave timestamp after local write.
     setLastSavedAt(savedAt);
     setSaveStatus("Autosaved locally. Cloud connection not enabled yet.");
-  }, [currentState, isHydrated]);
+  // Metadata-only changes must not trigger another autosave write.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile, items, selectedId, agentInbox, radarSignals, radarRuns, agentMessages, sync, isHydrated]);
 
   const metrics = useMemo(() => {
     const byStatus = items.reduce<Record<ResearchStatus, number>>((acc, item) => {
@@ -162,6 +168,13 @@ export default function InvestmentDashboard() {
 
   const exportJson = useMemo(() => JSON.stringify(currentState, null, 2), [currentState]);
   const latestRadarRun = radarRuns[0];
+  const recommendationItems = useMemo(() => {
+    const incoming = latestRadarRun?.opportunities ?? [];
+    return [...items.map(item => {
+      const fresh = incoming.find(candidate => candidate.recommendation?.symbol && candidate.recommendation.symbol === item.recommendation?.symbol);
+      return fresh ? { ...item, sources: mergeRadarEvidence(fresh.sources, item.sources) } : item;
+    }), ...incoming, ...buildInvestmentCandidates(profile)];
+  }, [items, latestRadarRun, profile]);
   const fallbackPriority = useMemo(() => [...items].sort((a, b) => {
     const score = (item: ResearchItem) => item.sources.length * 2 - item.openQuestions.length + (item.status === "memo" ? 3 : 0) + (item.confidence === "high" ? 2 : item.confidence === "medium" ? 1 : 0);
     return score(b) - score(a);
@@ -219,7 +232,9 @@ export default function InvestmentDashboard() {
 
   function captureDecisionSnapshot() {
     if (!selected) return;
-    const snapshot = createDecisionSnapshot(selected, decisionRationale);
+    const reviewed = evaluateRecommendation(selected, profile);
+    const snapshotItem = selected.recommendation ? { ...selected, recommendation: { ...selected.recommendation, stance: reviewed.stance } } : selected;
+    const snapshot = createDecisionSnapshot(snapshotItem, decisionRationale);
     updateSelected({ decisionSnapshots: [snapshot, ...selected.decisionSnapshots], status: "decided" });
     setDecisionRationale("");
   }
@@ -274,7 +289,7 @@ export default function InvestmentDashboard() {
       const run = createRadarRun({ mode: payload.mode, opportunities: incoming, previousRun: radarRuns[0] });
       setRadarRuns((current) => [run, ...current].slice(0, 12));
       setRadarScanStatus(`Saved radar run: ${incoming.length} opportunity memo(s), ${run.liveSourceCount} live sources, ${run.changes.newOpportunities.length} new opportunity(ies). Mode: ${payload.mode}. Promote only what deserves research.`);
-      setActiveView("radar");
+      setActiveView("recommendations");
     } catch {
       setRadarScanStatus("Radar scan failed. Keep using manual capture while we reconnect the research agent.");
     } finally {
@@ -313,6 +328,7 @@ export default function InvestmentDashboard() {
   }
 
   function promoteRadarOpportunity(opportunity: ResearchItem) {
+    const existing = items.find(item => item.title.toLowerCase() === opportunity.title.toLowerCase());
     const next: ResearchItem = {
       ...opportunity,
       id: uid("research"),
@@ -326,7 +342,7 @@ export default function InvestmentDashboard() {
       if (existingIndex === -1) return [next, ...current];
       return current.map((item, index) => index === existingIndex ? { ...item, ...next, id: item.id, decisionSnapshots: item.decisionSnapshots } : item);
     });
-    setSelectedId(next.id);
+    setSelectedId(existing?.id ?? next.id);
     setActiveView("memo");
   }
 
@@ -377,6 +393,7 @@ export default function InvestmentDashboard() {
           </div>
         </div>
         <nav className="nav-list" aria-label="Workspace sections">
+          <NavButton active={activeView === "recommendations"} label="Recommendations" detail="What to consider and why" onClick={() => setActiveView("recommendations")} />
           <NavButton active={activeView === "radar"} label="Radar" detail="What deserves attention" onClick={() => setActiveView("radar")} />
           <NavButton active={activeView === "inbox"} label="Inbox" detail={`${metrics.byStatus.inbox} open ideas`} onClick={() => setActiveView("inbox")} />
           <NavButton active={activeView === "memo"} label="Memo" detail={selected?.title ?? "No item"} onClick={() => setActiveView("memo")} />
@@ -386,16 +403,16 @@ export default function InvestmentDashboard() {
         </nav>
         <div className="guardrail-card">
           <p className="eyebrow">Boundary</p>
-          <p>Research support only. No financial advice, broker connection, or trade execution.</p>
+          <p>Your personal decision-support workspace. You review every investment case. No broker connection or trade execution.</p>
         </div>
       </aside>
 
       <section className="workspace">
         <header className="hero-card">
           <div>
-            <p className="eyebrow">Trust MVP v2</p>
-            <h2>Your evidence-first investment cockpit.</h2>
-            <p className="hero-copy">Capture themes, generate structured memos, expose missing evidence, check portfolio fit, and record human-owned decisions.</p>
+            <p className="eyebrow">Personal investment intelligence</p>
+            <h2>Investment decisions, with reasons.</h2>
+            <p className="hero-copy">Specific assets, entry conditions, downside risks and the evidence behind each view.</p>
           </div>
           <div className="hero-actions">
             <button className="primary-button" onClick={() => setActiveView("inbox")}>Add research idea</button>
@@ -410,6 +427,11 @@ export default function InvestmentDashboard() {
           <Metric label="Trust score" value={trust?.score ?? 0} tone={trust?.decisionReady ? undefined : "warn"} />
         </div>
 
+        {activeView === "recommendations" ? <RecommendationsView items={recommendationItems} profile={profile} scanning={isScanningRadar} status={radarScanStatus} onRefresh={runAutonomousRadar} onOpen={item => {
+          const existing = items.find(candidate => candidate.id === item.id);
+          if (existing) { setItems(current => current.map(candidate => candidate.id === item.id ? item : candidate)); setSelectedId(existing.id); setActiveView("memo"); }
+          else promoteRadarOpportunity(item);
+        }} /> : null}
         {activeView === "radar" ? <RadarView highestPriority={highestPriority} latestRun={latestRadarRun} radarRuns={radarRuns} signals={radarSignals} theme={radarTheme} signal={radarSignal} scanStatus={radarScanStatus} agentCommand={agentCommand} agentMessages={agentMessages} isAskingAgent={isAskingAgent} isScanning={isScanningRadar} onAdd={addRadarSignal} onAskAgent={askInvestmentAgent} onAgentCommandChange={setAgentCommand} onPromote={promoteRadarSignal} onPromoteOpportunity={promoteRadarOpportunity} onRunScan={runAutonomousRadar} onSignalChange={setRadarSignal} onThemeChange={setRadarTheme} onOpenMemo={() => setActiveView("memo")} /> : null}
         {activeView === "inbox" ? <InboxView items={items} selectedId={selected?.id ?? ""} draftAssetClass={draftAssetClass} draftTheme={draftTheme} draftTitle={draftTitle} draftWhyNow={draftWhyNow} agentInbox={agentInbox} agentRequestDraft={agentRequestDraft} onAdd={addResearchItem} onAssetClassChange={setDraftAssetClass} onDraft={draftSelectedRequest} onAgentDraftChange={setAgentRequestDraft} onQueueAgent={queueAgentRequest} onSelect={setSelectedId} onThemeChange={setDraftTheme} onTitleChange={setDraftTitle} onWhyNowChange={setDraftWhyNow} /> : null}
         {activeView === "memo" && selected ? <MemoView item={selected} update={updateSelected} sourceClaim={sourceClaim} sourceTitle={sourceTitle} sourceUrl={sourceUrl} onAddEvidence={addEvidence} onClaimChange={setSourceClaim} onTitleChange={setSourceTitle} onUrlChange={setSourceUrl} /> : null}
@@ -523,6 +545,7 @@ function MemoView({ item, update, sourceClaim, sourceTitle, sourceUrl, onAddEvid
   const evidenceCoverage = evaluateEvidenceCoverage(item);
   return <div className="view-grid memo-grid">
     <Panel title="Active memo" subtitle="Turn a raw idea into a source-backed investment memo.">
+      <RecommendationEditor item={item} update={update} />
       <TrustStatus trust={trust} />
       <EvidenceGapPanel coverage={evidenceCoverage} />
       <div className="memo-header"><div><p className="tag">{item.theme}</p><h3>{item.title}</h3></div><span className="status-pill">{statusLabels[item.status]}</span></div>
@@ -594,13 +617,14 @@ function JournalView({ item, rationale, onCapture, onRationaleChange }: { item: 
   return <Panel title="Decision journal" subtitle="Record why a decision state exists. This is not a trade instruction.">
     <TrustStatus trust={trust} />
     <div className="compact-form"><Textarea label="Human rationale" value={rationale} onChange={onRationaleChange} placeholder="Why is this decision state being captured now?" /><button className={trust.decisionReady ? "primary-button" : "danger-button"} onClick={onCapture}>{trust.decisionReady ? "Capture decision snapshot" : "Capture with warnings"}</button></div>
-    <div className="card-list">{item.decisionSnapshots.length === 0 ? <EmptyState text="No snapshots yet." /> : item.decisionSnapshots.map((snapshot) => <article key={snapshot.id} className="mini-card"><p className="tag">{new Date(snapshot.createdAt).toLocaleString()}</p><h4>{decisionLabels[snapshot.decision]} · {snapshot.confidence}</h4><p>{snapshot.humanRationale}</p><p><strong>{snapshot.actionBoundary}</strong></p></article>)}</div>
+    <div className="card-list">{item.decisionSnapshots.length === 0 ? <EmptyState text="No snapshots yet." /> : item.decisionSnapshots.map((snapshot) => <article key={snapshot.id} className="mini-card"><p className="tag">{new Date(snapshot.createdAt).toLocaleString()}</p><h4>{decisionLabels[snapshot.decision]} · {snapshot.confidence}</h4>{snapshot.recommendation ? <p>{snapshot.recommendation.symbol} · investment stance at capture: {snapshot.recommendation.stance.replaceAll("_", " ")}</p> : null}<p>{snapshot.humanRationale}</p><p><strong>{snapshot.actionBoundary}</strong></p></article>)}</div>
   </Panel>;
 }
 
 function SettingsView({ profile, onProfileChange, exportJson, importDraft, importMessage, lastSavedAt, saveStatus, storageKey, syncStatus, onImport, onImportDraftChange, onReset }: { profile: InvestmentProfile; onProfileChange: (profile: InvestmentProfile) => void; exportJson: string; importDraft: string; importMessage: string; lastSavedAt: string; saveStatus: string; storageKey: string; syncStatus: string; onImport: () => void; onImportDraftChange: (value: string) => void; onReset: () => void; }) {
   return <div className="view-grid two-col">
     <Panel title="Investment profile" subtitle="Constraints the app should respect before suggesting research directions.">
+      <div className="form-grid two"><Textarea label="Actual holdings, cash needs and concentration review" value={profile.holdingsNotes ?? ""} onChange={holdingsNotes => onProfileChange({ ...profile, holdingsNotes })} /><label className="field"><span>Holdings reviewed on</span><input type="date" value={profile.holdingsReviewedAt ?? ""} onChange={e => onProfileChange({ ...profile, holdingsReviewedAt: e.target.value })}/></label></div>
       <div className="form-grid two"><Select label="Risk level" value={profile.riskLevel} onChange={(riskLevel) => onProfileChange({ ...profile, riskLevel })} options={["low", "moderate", "balanced", "high", "barbell"].map((value) => ({ label: value, value: value as InvestmentProfile["riskLevel"] }))} /><Select label="Time horizon" value={profile.horizon} onChange={(horizon) => onProfileChange({ ...profile, horizon })} options={["0-1y", "1-3y", "3-7y", "7y+"].map((value) => ({ label: value, value: value as InvestmentProfile["horizon"] }))} /><Input label="Geography" value={profile.geography} onChange={(geography) => onProfileChange({ ...profile, geography })} /><Input label="Preferred assets" value={profile.preferredAssets.join(", ")} onChange={(value) => onProfileChange({ ...profile, preferredAssets: splitCsv(value) })} /></div>
       <div className="form-grid two"><Textarea label="Liquidity needs" value={profile.liquidityNeed} onChange={(liquidityNeed) => onProfileChange({ ...profile, liquidityNeed })} /><Textarea label="Exclusions / notes" value={profile.excludedAssets} onChange={(excludedAssets) => onProfileChange({ ...profile, excludedAssets })} /></div>
     </Panel>
