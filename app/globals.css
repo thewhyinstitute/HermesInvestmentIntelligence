@@ -412,3 +412,11 @@ a:hover { text-decoration: underline; }
 .scenario-calculator summary { cursor: pointer; font-weight: 600; }
 .scenario-calculator .form-grid { margin-top: 16px; }
 @media (max-width: 680px) { .market-facts-grid { grid-template-columns: minmax(0, 1fr); } }
+.decision-brief { border-top: 1px solid #d4d4d8; margin: 16px 0; padding: 12px 0; }
+.decision-brief details { margin: 12px 0; }
+.decision-brief summary { cursor: pointer; font-weight: 600; overflow-wrap: anywhere; }
+.decision-brief p, .decision-brief li { overflow-wrap: anywhere; }
+.decision-brief .form-grid { margin-top: 12px; }
+.scenario-results { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.scenario-results h4 { text-transform: capitalize; }
+@media (max-width: 680px) { .scenario-results { grid-template-columns: minmax(0, 1fr); } }

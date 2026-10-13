@@ -1,15 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { MarketDataPanel } from "./market-data-panel";
+import { DecisionBrief } from "./decision-brief";
+import type { MarketResponse, MarketResult } from "@/lib/market-data";
 import { rankRecommendations, stanceLabels } from "@/lib/recommendations";
 import type { InvestmentProfile, InvestmentRecommendation, InvestmentStance, ResearchItem } from "@/lib/types";
 
-export function RecommendationsView({ items, profile, scanning, status, onRefresh, onOpen }: {
+export function RecommendationsView({ items, profile, scanning, status, onRefresh, onOpen, onSave }: {
   items: ResearchItem[]; profile: InvestmentProfile; scanning: boolean; status: string;
-  onRefresh: () => void; onOpen: (item: ResearchItem) => void;
+  onRefresh: () => void; onOpen: (item: ResearchItem) => void; onSave: (item: ResearchItem) => void;
 }) {
   const [filter, setFilter] = useState("all");
+  const [marketData, setMarketData] = useState<MarketResponse>();
+  const [marketRecords, setMarketRecords] = useState<Record<string, MarketResult>>({});
+  const receiveData = useCallback((data: MarketResponse) => {
+    setMarketData(data);
+    if (data.result) { const result = data.result; setMarketRecords(current => ({ ...current, [result.symbol]: result })); }
+  }, []);
   const ranked = rankRecommendations(items.filter(item => item.recommendation), profile);
   const actionable = ranked.filter(x => x.stance === "consider_buying" || x.stance === "accumulate");
   const visible = ranked.filter(x => filter === "all" || x.stance === filter);
@@ -21,7 +29,7 @@ export function RecommendationsView({ items, profile, scanning, status, onRefres
       <option value="all">All candidates</option>{Object.entries(stanceLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
       <p className="notice">{status}</p></div>
     <p className="shortlist-boundary">Ranked by evidence and profile fit, not predicted returns. Holdings review: {profile.holdingsReviewedAt || "not completed"}. Prices are end-of-day review inputs, not execution quotes.</p>
-    <MarketDataPanel items={items} onOpen={onOpen}/>
+    <MarketDataPanel items={items} onOpen={onOpen} onData={receiveData}/>
     {visible.length === 0 ? <p className="empty-state">No candidates in this stance.</p> : visible.slice(0, 5).map((result, index) => {
       const item = result.item; const rec = item.recommendation;
       return <article className="recommendation-record" key={item.id}>
@@ -38,6 +46,7 @@ export function RecommendationsView({ items, profile, scanning, status, onRefres
           <div><h4>What would change the view</h4><ul>{(rec?.thesisBreakers ?? item.openQuestions).map(reason => <li key={reason}>{reason}</li>)}</ul>
             {rec?.alternatives.length ? <p><strong>Compare with:</strong> {rec.alternatives.join("; ")}</p> : null}</div>
         </div>
+        <DecisionBrief item={item} profile={profile} market={marketData ? { ...marketData, result: marketRecords[rec?.symbol ?? ""] } : undefined} onSave={onSave}/>
         <details className="recommendation-evidence"><summary>{result.blockers.length} pending checks · {item.sources.length} source(s) · {item.confidence} confidence</summary>
           <ul>{result.blockers.map(blocker => <li key={blocker}>{blocker}</li>)}</ul>
           {item.sources.map(source => <p key={source.id}><a href={/^https:\/\//.test(source.url) ? source.url : undefined} target="_blank" rel="noreferrer">{source.title}</a> · {source.checkedAt}<br/>{source.claim}</p>)}</details>

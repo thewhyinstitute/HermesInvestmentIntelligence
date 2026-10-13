@@ -100,5 +100,7 @@ export function scenarioReturn(price: number, terminalPrice: number, years: numb
   if (![price, terminalPrice, years, annualCash].every(Number.isFinite) || price <= 0 || terminalPrice < 0 || years <= 0 || annualCash < 0) return undefined;
   const finalValue = terminalPrice + annualCash * years;
   if (!Number.isFinite(finalValue)) return undefined;
-  return { total: finalValue / price - 1, annualized: Math.pow(finalValue / price, 1 / years) - 1 };
+  const total = finalValue / price - 1;
+  const annualized = Math.pow(finalValue / price, 1 / years) - 1;
+  return Number.isFinite(total) && Number.isFinite(annualized) ? { total, annualized } : undefined;
 }

@@ -427,7 +427,12 @@ export default function InvestmentDashboard() {
           <Metric label="Trust score" value={trust?.score ?? 0} tone={trust?.decisionReady ? undefined : "warn"} />
         </div>
 
-        {activeView === "recommendations" ? <RecommendationsView items={recommendationItems} profile={profile} scanning={isScanningRadar} status={radarScanStatus} onRefresh={runAutonomousRadar} onOpen={item => {
+        {activeView === "recommendations" ? <RecommendationsView items={recommendationItems} profile={profile} scanning={isScanningRadar} status={radarScanStatus} onRefresh={runAutonomousRadar} onSave={item => {
+          setItems(current => {
+            const existing = current.find(candidate => candidate.id === item.id || (item.recommendation?.symbol && candidate.recommendation?.symbol === item.recommendation.symbol));
+            return existing ? current.map(candidate => candidate.id === existing.id ? { ...item, id: existing.id } : candidate) : [item, ...current];
+          });
+        }} onOpen={item => {
           const existing = items.find(candidate => candidate.id === item.id);
           if (existing) { setItems(current => current.map(candidate => candidate.id === item.id ? item : candidate)); setSelectedId(existing.id); setActiveView("memo"); }
           else promoteRadarOpportunity(item);

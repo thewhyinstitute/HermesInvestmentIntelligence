@@ -1,4 +1,5 @@
 import { defaultSyncState, sampleAgentInbox, sampleRadarSignals } from "./sample-data";
+import { isBriefAssumptions, isBriefMarketData } from "./brief-validation";
 import type { AgentChatMessage, AgentDraft, AgentResearchRequest, CloudSyncState, DecisionSnapshot, FrontierRadarSignal, InvestmentAppState, InvestmentProfile, RadarRun, RadarRunChangeSummary, ResearchItem } from "./types";
 
 export const INVESTMENT_STORAGE_KEY = "hermes-investment-intelligence:v2";
@@ -74,7 +75,9 @@ function isDecisionSnapshot(value: unknown): value is DecisionSnapshot {
 
 function isResearchItem(value: unknown): value is ResearchItem {
   if (!isRecord(value)) return false;
-  return (value.recommendation === undefined || isRecommendation(value.recommendation)) && isString(value.id)
+  return (value.briefAssumptions === undefined || isBriefAssumptions(value.briefAssumptions))
+    && (value.briefHistory === undefined || (Array.isArray(value.briefHistory) && value.briefHistory.every(isBriefSnapshot)))
+    && (value.recommendation === undefined || isRecommendation(value.recommendation)) && isString(value.id)
     && isString(value.title)
     && isString(value.assetClass)
     && isString(value.theme)
@@ -97,6 +100,14 @@ function isResearchItem(value: unknown): value is ResearchItem {
     && value.agentDrafts.every(isAgentDraft)
     && Array.isArray(value.decisionSnapshots)
     && value.decisionSnapshots.every(isDecisionSnapshot);
+}
+
+function isBriefSnapshot(value: unknown) {
+  return isRecord(value) && ["id", "capturedAt", "symbol", "conclusion", "thesis"].every(key => isString(value[key]))
+    && ["reasons", "gaps", "facts", "risks"].every(key => isStringArray(value[key]))
+    && isBriefAssumptions(value.assumptions) && isRecommendation(value.recommendation)
+    && Array.isArray(value.sources) && value.sources.every(isEvidenceSource)
+    && (value.marketData === undefined || isBriefMarketData(value.marketData));
 }
 
 function isRecommendation(value: unknown) {

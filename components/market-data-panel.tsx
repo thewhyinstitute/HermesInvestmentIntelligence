@@ -5,7 +5,7 @@ import { freshness, priceEarnings, scenarioReturn, supportedSymbols, type Market
 import type { ResearchItem } from "@/lib/types";
 
 const pct = (value: number) => `${(value * 100).toFixed(2)}%`;
-export function MarketDataPanel({ items, onOpen }: { items: ResearchItem[]; onOpen: (item: ResearchItem) => void }) {
+export function MarketDataPanel({ items, onOpen, onData }: { items: ResearchItem[]; onOpen: (item: ResearchItem) => void; onData: (data: MarketResponse) => void }) {
   const [symbol, setSymbol] = useState<MarketSymbol>("NVDA");
   const [data, setData] = useState<MarketResponse>();
   const [records, setRecords] = useState<Partial<Record<MarketSymbol, MarketResult>>>({});
@@ -15,17 +15,17 @@ export function MarketDataPanel({ items, onOpen }: { items: ResearchItem[]; onOp
     const controller = new AbortController();
     fetch("/api/market-data", { signal: controller.signal }).then(async response => {
       if (!response.ok) throw new Error();
-      setData(await response.json());
+      const next: MarketResponse = await response.json(); setData(next); onData(next);
     }).catch(() => { if (!controller.signal.aborted) setError("Market data connection unavailable."); });
     return () => controller.abort();
-  }, []);
+  }, [onData]);
   async function refresh() {
     setBusy(true); setError("");
     try {
       const response = await fetch(`/api/market-data?symbol=${symbol}`);
       if (!response.ok) throw new Error();
       const next: MarketResponse = await response.json();
-      setData(next);
+      setData(next); onData(next);
       if (next.result) { const result = next.result; setRecords(current => ({ ...current, [result.symbol]: result })); }
     } catch { setError("Refresh failed. Previously fetched values remain dated below."); }
     finally { setBusy(false); }

@@ -60,6 +60,8 @@ export interface DecisionSnapshot {
 }
 
 export interface ResearchItem {
+  briefAssumptions?: BriefAssumptions;
+  briefHistory?: DecisionBriefSnapshot[];
   recommendation?: InvestmentRecommendation;
   id: string;
   title: string;
@@ -81,6 +83,33 @@ export interface ResearchItem {
   sources: EvidenceSource[];
   agentDrafts: AgentDraft[];
   decisionSnapshots: DecisionSnapshot[];
+}
+
+export interface BriefAssumptions {
+  entryPrice?: number;
+  years: number;
+  annualCash: number;
+  bearPrice?: number;
+  basePrice?: number;
+  bullPrice?: number;
+  requiredAnnualReturn?: number;
+  maxBearLoss?: number;
+}
+
+export interface DecisionBriefSnapshot {
+  id: string;
+  capturedAt: string;
+  symbol: string;
+  conclusion: string;
+  reasons: string[];
+  gaps: string[];
+  facts: string[];
+  assumptions: BriefAssumptions;
+  recommendation: InvestmentRecommendation;
+  thesis: string;
+  risks: string[];
+  sources: EvidenceSource[];
+  marketData?: import("./market-data").MarketResponse;
 }
 
 export type InvestmentStance = "consider_buying" | "accumulate" | "wait" | "watch" | "avoid";
