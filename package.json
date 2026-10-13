@@ -17,6 +17,7 @@
     "autoprefixer": "latest",
     "eslint": "latest",
     "eslint-config-next": "^16.4.0",
+    "fast-xml-parser": "^5.11.2",
     "next": "^16.4.0",
     "postcss": "latest",
     "react": "latest",

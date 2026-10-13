@@ -41,7 +41,7 @@ This web workspace supports investment research and decision preparation. It doe
 
 ## Not implemented yet
 
-- Automatic current-price feed and automated valuation models (price and valuation are sourced review inputs)
+- AI-generated investment analysis and automated valuation forecasts (deferred)
 - An exhaustive investment universe (initial candidates: QQQM, GRID, IAU, SGOV, NVDA)
 - Cloud database connection
 - Authentication
@@ -99,3 +99,13 @@ Recommendations is the default view. Refresh shortlist searches for instrument-s
 Open an investment case to review the ticker, exchange, valuation, entry condition, thesis breakers, alternatives and sourced price/date. Settings holds the actual-holdings and liquidity review. Consider-buying and accumulation stances are downgraded to Wait until freshness, independent evidence, memo quality and human/holdings reviews pass. Watch and Avoid remain valid outcomes. Trust/fit rankings are qualitative research priority, not return forecasts.
 
 Existing v2 browser workspaces are retained. Recommendation fields are optional and exported with the workspace. Decision snapshots preserve the investment case at capture. No market prices, target prices, expected returns or allocations are fabricated.
+
+## Direct market data (no AI or Hermes required)
+
+The Recommendations view has a Market facts panel and a deterministic return scenario calculator. `/api/market-data` fetches Treasury par yields without a key. Add `ALPHA_VANTAGE_API_KEY` as a server-side Vercel environment variable (or in `.env.local` for development) and redeploy to enable end-of-day quotes, NVDA company overview, and ETF profiles for QQQM, GRID, IAU and SGOV. Obtain a key at https://www.alphavantage.co/support/#api-key. Do not use a NEXT_PUBLIC key.
+
+Fetch one instrument at a time to conserve the free provider quota. Successful quotes/Treasury responses are cached for six hours and fundamentals for 24 hours. Coverage, free-tier limits and subscription restrictions depend on the provider; unavailable fields stay unavailable. This is not a real-time feed. API keys and raw provider errors are never returned to the browser. Only the fixed five-symbol universe is accepted.
+
+Prices use the provider trading date, Treasury rates use the published observation date, and ETF holdings are explicitly undated when the provider gives no holdings date. The overview's latest-quarter date is not claimed as a valuation snapshot date. Calculated price/EPS can differ from provider P/E because snapshots may differ. No scraped news price becomes a verified quote.
+
+Use price in investment case is an explicit action that replaces that case's quote, adds dated provenance, and clears the human-review date. Nothing automatically changes the investment stance. Quotes not transferred to a case are temporary panel data; transferred quotes are included in the existing workspace export. Scenario assumptions are temporary, user-supplied, and not forecasts. Treasury par yields are not ETF distribution yields. AI model and Telegram/Hermes connections remain deferred.

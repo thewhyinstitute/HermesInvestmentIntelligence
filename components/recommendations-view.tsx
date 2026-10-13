@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { MarketDataPanel } from "./market-data-panel";
 import { rankRecommendations, stanceLabels } from "@/lib/recommendations";
 import type { InvestmentProfile, InvestmentRecommendation, InvestmentStance, ResearchItem } from "@/lib/types";
 
@@ -19,7 +20,8 @@ export function RecommendationsView({ items, profile, scanning, status, onRefres
     <div className="recommendations-toolbar"><label className="field"><span>Stance</span><select value={filter} onChange={e => setFilter(e.target.value)}>
       <option value="all">All candidates</option>{Object.entries(stanceLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
       <p className="notice">{status}</p></div>
-    <p className="shortlist-boundary">Ranked by evidence and profile fit, not predicted returns. Holdings review: {profile.holdingsReviewedAt || "not completed"}. Prices are sourced review inputs, not a live quote feed.</p>
+    <p className="shortlist-boundary">Ranked by evidence and profile fit, not predicted returns. Holdings review: {profile.holdingsReviewedAt || "not completed"}. Prices are end-of-day review inputs, not execution quotes.</p>
+    <MarketDataPanel items={items} onOpen={onOpen}/>
     {visible.length === 0 ? <p className="empty-state">No candidates in this stance.</p> : visible.slice(0, 5).map((result, index) => {
       const item = result.item; const rec = item.recommendation;
       return <article className="recommendation-record" key={item.id}>
