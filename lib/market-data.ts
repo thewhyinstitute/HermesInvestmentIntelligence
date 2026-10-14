@@ -46,7 +46,14 @@ export function freshness(asOf: string | undefined, days: number, now = new Date
 }
 export function providerError(payload: unknown): string | undefined {
   const data = object(payload);
-  if (data.Note || data.Information) return "Provider limit or subscription restriction. Try later or check your data plan.";
+  const notice = typeof data.Note === "string" ? data.Note : typeof data.Information === "string" ? data.Information : "";
+  if (notice) {
+    if (/premium (?:endpoint|api|function)|premium.only|requires?.{0,40}premium|is a premium/i.test(notice)) return "Provider plan restriction: this endpoint requires Alpha Vantage Premium. Retrying a free key will not unlock it.";
+    if (/per day|daily/i.test(notice)) return "Provider daily quota reached. Alpha Vantage's free plan allows 25 requests per day; wait for the provider quota to reset.";
+    if (/rate limit|frequency|per minute/i.test(notice)) return "Provider request-rate limit reached. Pause refreshes and try later.";
+    if (/invalid.{0,20}(api.?key|apikey)|api.?key.{0,20}invalid/i.test(notice)) return "Provider rejected the API key. Check the server-side Alpha Vantage key.";
+    return "Provider returned an access restriction. Check the Alpha Vantage account; no replacement data was estimated.";
+  }
   if (data["Error Message"]) return "Provider could not return this instrument.";
 }
 export function parseQuote(payload: unknown, symbol: MarketSymbol): DatedQuote {

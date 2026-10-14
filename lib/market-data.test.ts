@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { finiteNumber, freshness, parseFundamentals, parseQuote, parseTreasury, priceEarnings, scenarioReturn, validDate } from "./market-data";
+import { finiteNumber, freshness, parseFundamentals, parseQuote, parseTreasury, priceEarnings, providerError, scenarioReturn, validDate } from "./market-data";
 
 describe("direct market data", () => {
+  it("distinguishes premium restrictions from daily quotas without leaking provider text", () => {
+    expect(providerError({ Information: "This is a premium endpoint. apikey=secret" })).toContain("requires Alpha Vantage Premium");
+    expect(providerError({ Information: "25 requests per day. Subscribe to premium. secret" })).toContain("daily quota");
+    expect(providerError({ Note: "rate limit 5 requests per minute secret" })).toContain("request-rate");
+    expect(providerError({ Information: "invalid API key secret" })).not.toContain("secret");
+  });
   it("rejects missing, null, infinite and formatted numbers", () => {
     for (const value of [null, undefined, "", "None", "1,000", Infinity]) expect(finiteNumber(value)).toBeUndefined();
     expect(finiteNumber("0")).toBe(0);

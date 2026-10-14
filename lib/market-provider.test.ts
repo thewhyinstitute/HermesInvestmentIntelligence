@@ -27,6 +27,24 @@ describe("market data boundary", () => {
     const response = await GET(new Request("http://localhost/api/market-data?symbol=BAD"));
     expect(response.status).toBe(400); expect(fetchMock).not.toHaveBeenCalled();
   });
+  it("does not spend free-key requests on premium company overview", async () => {
+    vi.stubEnv("ALPHA_VANTAGE_API_KEY", "free-test-key");
+    vi.stubEnv("ALPHA_VANTAGE_PREMIUM_ENABLED", "false");
+    const fetchMock = vi.fn(async (url: string | URL) => String(url).includes("treasury.gov") ? new Response(xml)
+      : Response.json({ "Global Quote": { "01. symbol": "NVDA", "05. price": "100", "07. latest trading day": "2026-10-13" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await loadMarketData("NVDA");
+    expect(result.result?.quote?.price).toBe(100);
+    expect(result.result?.messages.join(" ")).toContain("requires Premium");
+    expect(fetchMock.mock.calls.some(call => String(call[0]).includes("OVERVIEW"))).toBe(false);
+  });
+  it("allows company fundamentals only with an explicit premium opt-in", async () => {
+    vi.stubEnv("ALPHA_VANTAGE_API_KEY", "paid-test-key"); vi.stubEnv("ALPHA_VANTAGE_PREMIUM_ENABLED", "true");
+    vi.stubGlobal("fetch", vi.fn(async (url: string | URL) => String(url).includes("treasury.gov") ? new Response(xml)
+      : String(url).includes("OVERVIEW") ? Response.json({ Symbol: "NVDA", EPS: "5", LatestQuarter: "2026-07-31" })
+      : Response.json({ "Global Quote": { "01. symbol": "NVDA", "05. price": "100", "07. latest trading day": "2026-10-13" } })));
+    expect((await loadMarketData("NVDA")).result?.fundamentals?.eps).toBe(5);
+  });
   it("shows Treasury outages rather than substitute yields", async () => {
     vi.stubEnv("ALPHA_VANTAGE_API_KEY", "");
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network")));
