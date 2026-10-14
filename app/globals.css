@@ -420,3 +420,5 @@ a:hover { text-decoration: underline; }
 .scenario-results { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .scenario-results h4 { text-transform: capitalize; }
 @media (max-width: 680px) { .scenario-results { grid-template-columns: minmax(0, 1fr); } }
+.ai-review-panel { border-top: 1px solid #d4d4d8; padding: 12px 0; }
+.ai-review-panel .field { max-width: 420px; margin: 12px 0; }

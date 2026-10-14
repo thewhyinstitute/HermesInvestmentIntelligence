@@ -4,6 +4,8 @@ import { buildDecisionBrief, captureDecisionBrief, compareBriefs, defaultBriefAs
 import { isBriefAssumptions } from "@/lib/brief-validation";
 import type { MarketResponse } from "@/lib/market-data";
 import type { BriefAssumptions, InvestmentProfile, ResearchItem } from "@/lib/types";
+import { AIReviewPanel } from "./ai-review";
+import { supportedSymbols, type MarketSymbol } from "@/lib/market-data";
 
 export function DecisionBrief({ item, profile, market, onSave }: { item: ResearchItem; profile: InvestmentProfile; market?: MarketResponse; onSave: (item: ResearchItem) => void }) {
   const [draft, setDraft] = useState({ base: item.briefAssumptions, value: item.briefAssumptions ?? defaultBriefAssumptions });
@@ -36,6 +38,12 @@ export function DecisionBrief({ item, profile, market, onSave }: { item: Researc
     <h4>Decision brief</h4><p><strong>{brief.conclusion}</strong></p>
     <p>Rule-based research assessment. No AI forecast, allocation recommendation or trade instruction.</p>
     <p><strong>Portfolio fit:</strong> {brief.portfolioFit}</p>
+    {item.recommendation && supportedSymbols.includes(item.recommendation.symbol as MarketSymbol) && <AIReviewPanel input={{
+      symbol: item.recommendation.symbol as MarketSymbol, thesis: item.recommendation.rationale || item.thesis,
+      entryCondition: brief.conditions, facts: brief.facts, gaps: brief.gaps, risks: item.risks,
+      scenarios: brief.scenarios.map(s => `${s.name}: assumed ending price ${s.terminal ?? "not set"}; total return ${s.returns?.total ?? "not calculated"}; annualized equivalent ${s.returns?.annualized ?? "not calculated"}. User assumptions, not forecasts.`),
+      sources: item.sources.filter(source => source.url.startsWith("https://")).slice(0, 12).map(source => ({ id: source.id, title: source.title, url: source.url, claim: `${source.checkedAt}: ${source.claim}` })),
+    }}/>}
     {usingSaved && <p className="notice">Using saved instrument inputs from {history[0].capturedAt.slice(0, 10)}; freshness is checked again today.</p>}
     <details><summary>Facts, scenarios and pending checks</summary>
       <h4>Why this view</h4><ul>{brief.reasons.map((reason, i) => <li key={i}>{reason}</li>)}</ul>
