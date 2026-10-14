@@ -42,7 +42,7 @@ export function MarketDataPanel({ items, onOpen, onData }: { items: ResearchItem
       sources: [...candidate.sources.filter(item => item.id !== source.id), source] });
   }
   return <section className="market-data-section" aria-label="Market data">
-    <details><summary className="market-panel-summary">Market facts and return scenarios</summary>
+    <details open><summary className="market-panel-summary">Prices and market facts</summary>
     <div className="market-controls"><label className="field"><span>Instrument</span><select value={symbol} onChange={event => setSymbol(event.target.value as MarketSymbol)}>{supportedSymbols.map(value => <option key={value}>{value}</option>)}</select></label>
       <button className="secondary-button" onClick={refresh} disabled={busy}>{busy ? "Fetching..." : "Fetch market data"}</button></div>
     <div aria-live="polite">{error && <p className="notice">{error}</p>}

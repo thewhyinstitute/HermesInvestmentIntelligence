@@ -18,6 +18,7 @@
     "eslint": "latest",
     "eslint-config-next": "^16.4.0",
     "fast-xml-parser": "^5.11.2",
+    "lucide-react": "^1.57.0",
     "next": "^16.4.0",
     "postcss": "latest",
     "react": "latest",

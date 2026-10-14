@@ -1,6 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { ArrowLeft, ChartNoAxesCombined, Database, UserRound } from "lucide-react";
+import { PersonalProfile } from "./personal-profile";
+import { MarketDataPanel } from "./market-data-panel";
+import { AIUnlock } from "./ai-access";
+import { DecisionBrief } from "./decision-brief";
+import { profileFitReason } from "@/lib/profile-guidance";
+import type { MarketResponse } from "@/lib/market-data";
 import { defaultProfile, sampleResearchItems } from "@/lib/sample-data";
 import { RecommendationsView, RecommendationEditor } from "./recommendations-view";
 import { buildInvestmentCandidates } from "@/lib/investment-candidates";
@@ -53,10 +60,6 @@ const sourceTypeLabels: Record<EvidenceSource["sourceType"], string> = {
   other: "Other"
 };
 
-function splitCsv(value: string) {
-  return value.split(",").map((item) => item.trim()).filter(Boolean);
-}
-
 function splitLines(value: string) {
   return value.split("\n").map((item) => item.trim()).filter(Boolean);
 }
@@ -106,7 +109,8 @@ export default function InvestmentDashboard() {
   const [agentCommand, setAgentCommand] = useState("Run radar and summarize what changed.");
   const [isAskingAgent, setIsAskingAgent] = useState(false);
   const [isScanningRadar, setIsScanningRadar] = useState(false);
-  const [activeView, setActiveView] = useState<"recommendations" | "radar" | "inbox" | "memo" | "fit" | "journal" | "settings">("recommendations");
+  const [activeView, setActiveView] = useState<"recommendations" | "radar" | "inbox" | "memo" | "fit" | "journal" | "settings" | "profile">("recommendations");
+  const [marketData, setMarketData] = useState<MarketResponse>();
 
   useEffect(() => {
     const stored = deserializeInvestmentState(window.localStorage.getItem(INVESTMENT_STORAGE_KEY))
@@ -155,16 +159,6 @@ export default function InvestmentDashboard() {
   // Metadata-only changes must not trigger another autosave write.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile, items, selectedId, agentInbox, radarSignals, radarRuns, agentMessages, sync, isHydrated]);
-
-  const metrics = useMemo(() => {
-    const byStatus = items.reduce<Record<ResearchStatus, number>>((acc, item) => {
-      acc[item.status] += 1;
-      return acc;
-    }, { inbox: 0, watch: 0, memo: 0, decided: 0, rejected: 0 });
-    const evidenceCount = items.reduce((count, item) => count + item.sources.length, 0);
-    const blockers = items.reduce((count, item) => count + item.openQuestions.length, 0);
-    return { byStatus, evidenceCount, blockers, total: items.length };
-  }, [items]);
 
   const exportJson = useMemo(() => JSON.stringify(currentState, null, 2), [currentState]);
   const latestRadarRun = radarRuns[0];
@@ -380,87 +374,42 @@ export default function InvestmentDashboard() {
   }
 
   const fit = selected ? scorePortfolioFit(selected, profile) : null;
-  const trust = selected ? evaluateMemoTrust(selected) : null;
 
   return (
-    <main className="app-shell">
-      <aside className="sidebar">
+    <main className="simple-app">
+      <header className="app-topbar">
         <div className="brand-lockup">
           <div className="brand-mark">II</div>
           <div>
-            <p className="eyebrow">Hermes</p>
             <h1>Investment Intelligence</h1>
           </div>
         </div>
-        <nav className="nav-list" aria-label="Workspace sections">
-          <NavButton active={activeView === "recommendations"} label="Recommendations" detail="What to consider and why" onClick={() => setActiveView("recommendations")} />
-          <NavButton active={activeView === "radar"} label="Radar" detail="What deserves attention" onClick={() => setActiveView("radar")} />
-          <NavButton active={activeView === "inbox"} label="Inbox" detail={`${metrics.byStatus.inbox} open ideas`} onClick={() => setActiveView("inbox")} />
-          <NavButton active={activeView === "memo"} label="Memo" detail={selected?.title ?? "No item"} onClick={() => setActiveView("memo")} />
-          <NavButton active={activeView === "fit"} label="Portfolio Fit" detail={fit ? `${fit.score}/100` : "No score"} onClick={() => setActiveView("fit")} />
-          <NavButton active={activeView === "journal"} label="Journal" detail={trust?.decisionReady ? "Decision-ready" : "Needs trust checks"} onClick={() => setActiveView("journal")} />
-          <NavButton active={activeView === "settings"} label="Settings" detail="Profile & data" onClick={() => setActiveView("settings")} />
+        <nav className="primary-nav" aria-label="Main navigation">
+          <button aria-current={["recommendations", "memo", "fit", "journal"].includes(activeView) ? "page" : undefined} onClick={() => setActiveView("recommendations")}><ChartNoAxesCombined size={18}/>Investments</button>
+          <button aria-current={activeView === "profile" ? "page" : undefined} onClick={() => setActiveView("profile")}><UserRound size={18}/>My profile</button>
+          <button aria-current={["settings", "radar", "inbox"].includes(activeView) ? "page" : undefined} onClick={() => setActiveView("settings")}><Database size={18}/>Market & data</button>
         </nav>
-        <div className="guardrail-card">
-          <p className="eyebrow">Boundary</p>
-          <p>Your personal decision-support workspace. You review every investment case. No broker connection or trade execution.</p>
-        </div>
-      </aside>
+      </header>
 
-      <section className="workspace">
-        <header className="hero-card">
-          <div>
-            <p className="eyebrow">Personal investment intelligence</p>
-            <h2>Investment decisions, with reasons.</h2>
-            <p className="hero-copy">Specific assets, entry conditions, downside risks and the evidence behind each view.</p>
-          </div>
-          <div className="hero-actions">
-            <button className="primary-button" onClick={() => setActiveView("inbox")}>Add research idea</button>
-            <button className="secondary-button" onClick={() => setActiveView("memo")}>Review active memo</button>
-          </div>
-        </header>
+      <section className="app-content">
+        {activeView === "profile" ? <PersonalProfile profile={profile} onSave={setProfile}/> : null}
+        {["memo", "fit", "journal", "radar", "inbox"].includes(activeView) ? <button className="text-button back-button" onClick={() => setActiveView(["radar", "inbox"].includes(activeView) ? "settings" : "recommendations")}><ArrowLeft size={18}/>Back to {["radar", "inbox"].includes(activeView) ? "Market & data" : "investments"}</button> : null}
 
-        <div className="metric-grid">
-          <Metric label="Research items" value={metrics.total} />
-          <Metric label="Inbox" value={metrics.byStatus.inbox} />
-          <Metric label="Evidence" value={metrics.evidenceCount} />
-          <Metric label="Trust score" value={trust?.score ?? 0} tone={trust?.decisionReady ? undefined : "warn"} />
-        </div>
-
-        {activeView === "recommendations" ? <RecommendationsView items={recommendationItems} profile={profile} scanning={isScanningRadar} status={radarScanStatus} onRefresh={runAutonomousRadar} onSave={item => {
-          setItems(current => {
-            const existing = current.find(candidate => candidate.id === item.id || (item.recommendation?.symbol && candidate.recommendation?.symbol === item.recommendation.symbol));
-            return existing ? current.map(candidate => candidate.id === existing.id ? { ...item, id: existing.id } : candidate) : [item, ...current];
-          });
-        }} onOpen={item => {
+        {activeView === "recommendations" ? <RecommendationsView items={recommendationItems} profile={profile} scanning={isScanningRadar} status={radarScanStatus} onRefresh={runAutonomousRadar} onProfile={() => setActiveView("profile")} onOpen={item => {
           const existing = items.find(candidate => candidate.id === item.id);
           if (existing) { setItems(current => current.map(candidate => candidate.id === item.id ? item : candidate)); setSelectedId(existing.id); setActiveView("memo"); }
           else promoteRadarOpportunity(item);
         }} /> : null}
         {activeView === "radar" ? <RadarView highestPriority={highestPriority} latestRun={latestRadarRun} radarRuns={radarRuns} signals={radarSignals} theme={radarTheme} signal={radarSignal} scanStatus={radarScanStatus} agentCommand={agentCommand} agentMessages={agentMessages} isAskingAgent={isAskingAgent} isScanning={isScanningRadar} onAdd={addRadarSignal} onAskAgent={askInvestmentAgent} onAgentCommandChange={setAgentCommand} onPromote={promoteRadarSignal} onPromoteOpportunity={promoteRadarOpportunity} onRunScan={runAutonomousRadar} onSignalChange={setRadarSignal} onThemeChange={setRadarTheme} onOpenMemo={() => setActiveView("memo")} /> : null}
         {activeView === "inbox" ? <InboxView items={items} selectedId={selected?.id ?? ""} draftAssetClass={draftAssetClass} draftTheme={draftTheme} draftTitle={draftTitle} draftWhyNow={draftWhyNow} agentInbox={agentInbox} agentRequestDraft={agentRequestDraft} onAdd={addResearchItem} onAssetClassChange={setDraftAssetClass} onDraft={draftSelectedRequest} onAgentDraftChange={setAgentRequestDraft} onQueueAgent={queueAgentRequest} onSelect={setSelectedId} onThemeChange={setDraftTheme} onTitleChange={setDraftTitle} onWhyNowChange={setDraftWhyNow} /> : null}
-        {activeView === "memo" && selected ? <MemoView item={selected} update={updateSelected} sourceClaim={sourceClaim} sourceTitle={sourceTitle} sourceUrl={sourceUrl} onAddEvidence={addEvidence} onClaimChange={setSourceClaim} onTitleChange={setSourceTitle} onUrlChange={setSourceUrl} /> : null}
+        {activeView === "memo" && selected ? <section className="investment-detail"><header className="page-heading"><p className="eyebrow">{selected.recommendation?.symbol} · {selected.assetClass}</p><h2>{selected.title}</h2></header><div className="case-overview"><h3>Why consider it</h3><p>{selected.recommendation?.rationale || selected.thesis}</p><h3>Fit for you</h3><p>{profileFitReason(selected, profile)}</p><h3>When to consider investing</h3><p>{selected.recommendation?.entryCondition || selected.whyNow}</p><h3>What could go wrong</h3><ul>{selected.risks.map(risk => <li key={risk}>{risk}</li>)}</ul><h3>What would change the view</h3><ul>{(selected.recommendation?.thesisBreakers ?? selected.openQuestions).map(reason => <li key={reason}>{reason}</li>)}</ul></div><DecisionBrief item={selected} profile={profile} market={marketData?.result?.symbol === selected.recommendation?.symbol ? marketData : undefined} onSave={item => updateSelected(item)}/><details className="case-evidence"><summary>Sources and evidence</summary>{selected.sources.length ? selected.sources.map(source => <p key={source.id}><a href={source.url.startsWith("https://") ? source.url : undefined} target="_blank" rel="noreferrer">{source.title}</a> · {source.checkedAt}<br/>{source.claim}</p>) : <p>No sources attached yet.</p>}</details><details><summary>Edit investment case</summary><MemoView item={selected} update={updateSelected} sourceClaim={sourceClaim} sourceTitle={sourceTitle} sourceUrl={sourceUrl} onAddEvidence={addEvidence} onClaimChange={setSourceClaim} onTitleChange={setSourceTitle} onUrlChange={setSourceUrl}/></details><div className="button-row"><button className="text-button" onClick={() => setActiveView("fit")}>Detailed fit checks</button><button className="text-button" onClick={() => setActiveView("journal")}>Decision history</button><button className="text-button" onClick={() => setActiveView("settings")}>Refresh price / unlock AI</button></div></section> : null}
         {activeView === "fit" && selected && fit ? <FitView item={selected} profile={profile} fit={fit} /> : null}
         {activeView === "journal" && selected ? <JournalView item={selected} rationale={decisionRationale} onCapture={captureDecisionSnapshot} onRationaleChange={setDecisionRationale} /> : null}
-        {activeView === "settings" ? <SettingsView profile={profile} onProfileChange={setProfile} exportJson={exportJson} importDraft={importDraft} importMessage={importMessage} lastSavedAt={lastSavedAt} saveStatus={saveStatus} storageKey={INVESTMENT_STORAGE_KEY} syncStatus={sync.lastSyncStatus} onImport={importWorkspace} onImportDraftChange={setImportDraft} onReset={resetWorkspace} /> : null}
+        {activeView === "settings" ? <><header className="page-heading"><h2>Market & data</h2><p>Dated market facts, research connections, and your saved workspace.</p></header><MarketDataPanel items={recommendationItems} onOpen={item => { const existing = items.find(candidate => candidate.id === item.id || candidate.recommendation?.symbol === item.recommendation?.symbol); if (existing) { setItems(current => current.map(candidate => candidate.id === existing.id ? { ...item, id: existing.id } : candidate)); setSelectedId(existing.id); setActiveView("memo"); } else promoteRadarOpportunity(item); }} onData={setMarketData}/><AIUnlock/><details className="advanced-workspace"><summary>Research tools and saved scans</summary><p>{radarScanStatus}</p><div className="button-row"><button className="secondary-button" onClick={() => setActiveView("radar")}>Market research</button><button className="secondary-button" onClick={() => setActiveView("inbox")}>Saved research ideas</button></div></details><SettingsView profile={profile} onProfileChange={setProfile} exportJson={exportJson} importDraft={importDraft} importMessage={importMessage} lastSavedAt={lastSavedAt} saveStatus={saveStatus} storageKey={INVESTMENT_STORAGE_KEY} syncStatus={sync.lastSyncStatus} onImport={importWorkspace} onImportDraftChange={setImportDraft} onReset={resetWorkspace} /></> : null}
       </section>
-
-      <aside className="detail-rail">
-        {selected ? <ActiveResearchCard item={selected} onMemo={() => setActiveView("memo")} /> : null}
-        {trust ? <TrustSummary trust={trust} /> : null}
-        {selected && fit ? <FitSummary fit={fit} /> : null}
-        <ProfileSummary profile={profile} />
-      </aside>
+      <footer className="app-footer">Personal research only. No automatic trades. Your profile and saved cases stay in this browser.</footer>
     </main>
   );
-}
-
-function NavButton({ active, label, detail, onClick }: { active: boolean; label: string; detail: string; onClick: () => void }) {
-  return <button className={`nav-button ${active ? "is-active" : ""}`} onClick={onClick}><span>{label}</span><small>{detail}</small></button>;
-}
-
-function Metric({ label, value, tone }: { label: string; value: number; tone?: "warn" }) {
-  return <div className={`metric-card ${tone === "warn" ? "is-warn" : ""}`}><strong>{value}</strong><span>{label}</span></div>;
 }
 
 function Panel({ title, subtitle, children, action }: { title: string; subtitle?: string; children: React.ReactNode; action?: React.ReactNode }) {
@@ -626,35 +575,16 @@ function JournalView({ item, rationale, onCapture, onRationaleChange }: { item: 
   </Panel>;
 }
 
-function SettingsView({ profile, onProfileChange, exportJson, importDraft, importMessage, lastSavedAt, saveStatus, storageKey, syncStatus, onImport, onImportDraftChange, onReset }: { profile: InvestmentProfile; onProfileChange: (profile: InvestmentProfile) => void; exportJson: string; importDraft: string; importMessage: string; lastSavedAt: string; saveStatus: string; storageKey: string; syncStatus: string; onImport: () => void; onImportDraftChange: (value: string) => void; onReset: () => void; }) {
+function SettingsView({ exportJson, importDraft, importMessage, lastSavedAt, saveStatus, storageKey, syncStatus, onImport, onImportDraftChange, onReset }: { profile: InvestmentProfile; onProfileChange: (profile: InvestmentProfile) => void; exportJson: string; importDraft: string; importMessage: string; lastSavedAt: string; saveStatus: string; storageKey: string; syncStatus: string; onImport: () => void; onImportDraftChange: (value: string) => void; onReset: () => void; }) {
   return <div className="view-grid two-col">
-    <Panel title="Investment profile" subtitle="Constraints the app should respect before suggesting research directions.">
-      <div className="form-grid two"><Textarea label="Actual holdings, cash needs and concentration review" value={profile.holdingsNotes ?? ""} onChange={holdingsNotes => onProfileChange({ ...profile, holdingsNotes })} /><label className="field"><span>Holdings reviewed on</span><input type="date" value={profile.holdingsReviewedAt ?? ""} onChange={e => onProfileChange({ ...profile, holdingsReviewedAt: e.target.value })}/></label></div>
-      <div className="form-grid two"><Select label="Risk level" value={profile.riskLevel} onChange={(riskLevel) => onProfileChange({ ...profile, riskLevel })} options={["low", "moderate", "balanced", "high", "barbell"].map((value) => ({ label: value, value: value as InvestmentProfile["riskLevel"] }))} /><Select label="Time horizon" value={profile.horizon} onChange={(horizon) => onProfileChange({ ...profile, horizon })} options={["0-1y", "1-3y", "3-7y", "7y+"].map((value) => ({ label: value, value: value as InvestmentProfile["horizon"] }))} /><Input label="Geography" value={profile.geography} onChange={(geography) => onProfileChange({ ...profile, geography })} /><Input label="Preferred assets" value={profile.preferredAssets.join(", ")} onChange={(value) => onProfileChange({ ...profile, preferredAssets: splitCsv(value) })} /></div>
-      <div className="form-grid two"><Textarea label="Liquidity needs" value={profile.liquidityNeed} onChange={(liquidityNeed) => onProfileChange({ ...profile, liquidityNeed })} /><Textarea label="Exclusions / notes" value={profile.excludedAssets} onChange={(excludedAssets) => onProfileChange({ ...profile, excludedAssets })} /></div>
-    </Panel>
-    <Panel title="Data & backup" subtitle="Debug/import/export moved here so the main workflow stays clean.">
-      <div className="settings-status"><p><strong>Status:</strong> {saveStatus}</p><p><strong>Sync:</strong> {syncStatus}</p><p><strong>Last saved:</strong> {new Date(lastSavedAt).toLocaleString()}</p><p><strong>Storage key:</strong> {storageKey}</p></div>
+    <Panel title="My saved data">
+      <p>Saved in this browser. Export a backup before switching devices.</p>
+      <details><summary>Storage status</summary><div className="settings-status"><p><strong>Status:</strong> {saveStatus}</p><p><strong>Sync:</strong> {syncStatus}</p><p><strong>Last saved:</strong> {new Date(lastSavedAt).toLocaleString()}</p><p><strong>Storage key:</strong> {storageKey}</p></div></details>
       <details className="backup-details"><summary>Export / import workspace JSON</summary><Textarea label="Export JSON" value={exportJson} onChange={() => undefined} rows={8} /><Textarea label="Import JSON" value={importDraft} onChange={onImportDraftChange} placeholder="Paste workspace export here" rows={6} /><div className="button-row"><button className="secondary-button" onClick={onImport}>Import workspace</button><button className="danger-button" onClick={onReset}>Reset local workspace</button></div>{importMessage ? <p className="notice">{importMessage}</p> : null}</details>
     </Panel>
   </div>;
 }
 
-function ActiveResearchCard({ item, onMemo }: { item: ResearchItem; onMemo: () => void }) {
-  return <section className="rail-card"><p className="eyebrow">Active research</p><h3>{item.title}</h3><p>{item.theme} · {item.assetClass}</p><div className="rail-stats"><span>{item.sources.length} sources</span><span>{item.openQuestions.length} questions</span></div><p className="next-action">{nextActionFor(item)}</p><button className="secondary-button" onClick={onMemo}>Open memo</button></section>;
-}
-
-function FitSummary({ fit }: { fit: ReturnType<typeof scorePortfolioFit> }) {
-  return <section className="rail-card"><p className="eyebrow">Fit score</p><div className="rail-score"><strong>{fit.score}</strong><span>{fit.label}</span></div>{fit.blockers.length > 0 ? <p>{fit.blockers.length} blocker(s) before review.</p> : <p>No major qualitative blockers flagged.</p>}</section>;
-}
-
-function TrustSummary({ trust }: { trust: ReturnType<typeof evaluateMemoTrust> }) {
-  return <section className={`rail-card trust-summary ${trust.decisionReady ? "is-ready" : "is-blocked"}`}><p className="eyebrow">Trust score</p><div className="rail-score"><strong>{trust.score}</strong><span>{trust.label}</span></div><p>{trust.requiredNextStep}</p></section>;
-}
-
-function ProfileSummary({ profile }: { profile: InvestmentProfile }) {
-  return <section className="rail-card"><p className="eyebrow">Profile</p><h3>{profile.riskLevel} · {profile.horizon}</h3><p>{profile.geography}</p><p>{profile.preferredAssets.join(" · ")}</p></section>;
-}
 
 function InfoTile({ label, value }: { label: string; value: string }) {
   return <div className="info-tile"><span>{label}</span><strong>{value}</strong></div>;

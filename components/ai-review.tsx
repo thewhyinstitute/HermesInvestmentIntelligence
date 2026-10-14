@@ -22,7 +22,7 @@ export function AIReviewPanel({ input }: { input: AIReviewInput }) {
   }
   return <details className="ai-review-panel"><summary>AI-assisted explanation</summary>
     <p>A manual review request sends this instrument&apos;s thesis, evidence, dated facts and scenarios to the OpenAI API and uses API credit. No holdings or profile notes are included. The draft does not change your decision.</p>
-    {!status?.authenticated && <p className="notice">Unlock AI once at the top of Recommendations.</p>}
+    {!status?.authenticated && <p className="notice">Unlock AI once in Market & data.</p>}
     <button className="secondary-button" disabled={!status?.authenticated || busy} onClick={generate}>{busy ? "Reviewing..." : "Generate AI research draft"}</button>
     <p role="status">{error}</p>
     {result && <div><h4>AI research draft · {result.review.assessment.replaceAll("_", " ")}</h4>

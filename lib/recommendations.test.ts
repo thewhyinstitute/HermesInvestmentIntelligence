@@ -17,7 +17,7 @@ function readyItem() {
     quote: { price: 100, asOf: "2026-10-13", sourceUrl: "https://issuer.example.org/quote" } };
   return item;
 }
-const profile = { ...defaultProfile, holdingsNotes: "Holdings and liquidity reviewed", holdingsReviewedAt: "2026-10-13" };
+const profile = { ...defaultProfile, goal: "growth" as const, investmentBudget: 10000, baseCurrency: "USD", experience: "some" as const, profileCompletedAt: "2026-10-13", holdingsNotes: "Holdings and liquidity reviewed", holdingsReviewedAt: "2026-10-13" };
 describe("investment recommendation gates", () => {
   it("does not turn a theme into a buy", () => {
     const result = evaluateRecommendation(createStructuredMemoDraft("Theme", "AI", "Theme", "Growth"), profile, now);
@@ -26,6 +26,12 @@ describe("investment recommendation gates", () => {
   it("allows a reviewed concrete investment case", () => {
     expect(evaluateRecommendation(readyItem(), profile, now).stance).toBe("consider_buying");
     expect(evaluateRecommendation(readyItem(), profile, now).ready).toBe(true);
+  });
+  it("requires a completed personal profile before a buy stance", () => {
+    expect(evaluateRecommendation(readyItem(), { ...profile, profileCompletedAt: undefined }, now).stance).toBe("wait");
+  });
+  it("blocks volatile investments for capital preservation", () => {
+    expect(evaluateRecommendation(readyItem(), { ...profile, goal: "preserve_capital" }, now).stance).toBe("wait");
   });
   it("downgrades missing or stale price and unknown holdings to wait", () => {
     const item = readyItem(); item.recommendation!.quote!.asOf = "2026-09-01";

@@ -10,6 +10,11 @@ export type AgentDraftStatus = "draft" | "reviewed" | "accepted" | "rejected";
 export type SyncMode = "browser_local" | "cloud_ready" | "cloud_connected";
 
 export interface InvestmentProfile {
+  goal?: "growth" | "income" | "preserve_capital" | "diversification";
+  investmentBudget?: number;
+  baseCurrency?: string;
+  experience?: "beginner" | "some" | "experienced";
+  profileCompletedAt?: string;
   holdingsReviewedAt?: string;
   holdingsNotes?: string;
   riskLevel: RiskLevel;

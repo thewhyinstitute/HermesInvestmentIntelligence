@@ -22,7 +22,12 @@ function isStringArray(value: unknown): value is string[] {
 
 function isInvestmentProfile(value: unknown): value is InvestmentProfile {
   if (!isRecord(value)) return false;
-  return (value.holdingsNotes === undefined || isString(value.holdingsNotes))
+  return (value.goal === undefined || ["growth", "income", "preserve_capital", "diversification"].includes(String(value.goal)))
+    && (value.investmentBudget === undefined || (typeof value.investmentBudget === "number" && Number.isFinite(value.investmentBudget) && value.investmentBudget > 0))
+    && (value.baseCurrency === undefined || isString(value.baseCurrency))
+    && (value.experience === undefined || ["beginner", "some", "experienced"].includes(String(value.experience)))
+    && (value.profileCompletedAt === undefined || isString(value.profileCompletedAt))
+    && (value.holdingsNotes === undefined || isString(value.holdingsNotes))
     && (value.holdingsReviewedAt === undefined || isString(value.holdingsReviewedAt))
     && isString(value.riskLevel)
     && isString(value.horizon)

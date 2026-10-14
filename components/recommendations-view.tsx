@@ -1,58 +1,36 @@
 "use client";
 
-import { useCallback, useState } from "react";
-import { MarketDataPanel } from "./market-data-panel";
-import { DecisionBrief } from "./decision-brief";
-import { AIUnlock } from "./ai-access";
-import type { MarketResponse, MarketResult } from "@/lib/market-data";
+import { useState } from "react";
+import { ArrowRight, RefreshCw } from "lucide-react";
+import { profileFitReason, profileIsComplete } from "@/lib/profile-guidance";
 import { rankRecommendations, stanceLabels } from "@/lib/recommendations";
 import type { InvestmentProfile, InvestmentRecommendation, InvestmentStance, ResearchItem } from "@/lib/types";
 
-export function RecommendationsView({ items, profile, scanning, status, onRefresh, onOpen, onSave }: {
+export function RecommendationsView({ items, profile, scanning, status, onRefresh, onOpen, onProfile }: {
   items: ResearchItem[]; profile: InvestmentProfile; scanning: boolean; status: string;
-  onRefresh: () => void; onOpen: (item: ResearchItem) => void; onSave: (item: ResearchItem) => void;
+  onRefresh: () => void; onOpen: (item: ResearchItem) => void; onProfile: () => void;
 }) {
   const [filter, setFilter] = useState("all");
-  const [marketData, setMarketData] = useState<MarketResponse>();
-  const [marketRecords, setMarketRecords] = useState<Record<string, MarketResult>>({});
-  const receiveData = useCallback((data: MarketResponse) => {
-    setMarketData(data);
-    if (data.result) { const result = data.result; setMarketRecords(current => ({ ...current, [result.symbol]: result })); }
-  }, []);
   const ranked = rankRecommendations(items.filter(item => item.recommendation), profile);
   const actionable = ranked.filter(x => x.stance === "consider_buying" || x.stance === "accumulate");
   const visible = ranked.filter(x => filter === "all" || x.stance === filter);
   return <section className="recommendations-view">
-    <div className="recommendations-heading"><div><p className="eyebrow">Your investment shortlist</p><h2>What to consider, and why</h2>
-      <p>{actionable.length ? `${actionable.length} reviewed investment case(s) ready for your decision.` : "No buy-ready recommendation yet. The candidates below show the case and the checks still needed."}</p></div>
-      <button className="primary-button" disabled={scanning} onClick={onRefresh}>{scanning ? "Refreshing evidence..." : "Refresh shortlist"}</button></div>
+    <div className="recommendations-heading"><div><h2>Investments to consider</h2>
+      <p>{actionable.length ? "Reviewed cases for your consideration. The final decision is yours." : "A starting shortlist, not a buy instruction. Each investment needs price and evidence checks."}</p></div>
+      <button className="secondary-button" disabled={scanning} onClick={onRefresh}><RefreshCw size={16}/>{scanning ? "Refreshing..." : "Refresh research"}</button></div>
+    {!profileIsComplete(profile) ? <div className="profile-prompt"><div><strong>First, tell me about your goals</strong><p>Complete your profile before treating these candidates as personal recommendations.</p></div><button className="primary-button" onClick={onProfile}>Complete my profile <ArrowRight size={16}/></button></div> : <p className="profile-context">{profile.goal?.replaceAll("_", " ")} · {profile.horizon} horizon · {profile.riskLevel} risk · {profile.baseCurrency} spending currency <button className="text-button" onClick={onProfile}>Edit profile</button></p>}
     <div className="recommendations-toolbar"><label className="field"><span>Stance</span><select value={filter} onChange={e => setFilter(e.target.value)}>
       <option value="all">All candidates</option>{Object.entries(stanceLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
-      <p className="notice">{status}</p></div>
-    <p className="shortlist-boundary">Ranked by evidence and profile fit, not predicted returns. Holdings review: {profile.holdingsReviewedAt || "not completed"}. Prices are end-of-day review inputs, not execution quotes.</p>
-    <AIUnlock/>
-    <MarketDataPanel items={items} onOpen={onOpen} onData={receiveData}/>
-    {visible.length === 0 ? <p className="empty-state">No candidates in this stance.</p> : visible.slice(0, 5).map((result, index) => {
+      </div>
+    {!scanning && /Saved radar run|failed/i.test(status) ? <p role="status" className="notice">{/failed/i.test(status) ? "Research refresh failed. Try again later; your saved investments are unchanged." : "Research updated. Open an investment to review the latest evidence."}</p> : null}
+    {visible.length === 0 ? <p className="empty-state">No candidates in this stance.</p> : visible.slice(0, 5).map((result) => {
       const item = result.item; const rec = item.recommendation;
       return <article className="recommendation-record" key={item.id}>
-        <header><div><p className="eyebrow">#{index + 1} research priority · {item.assetClass}</p><h3>{rec?.symbol ? `${rec.symbol} — ` : ""}{item.title}</h3>
+        <header><div><p className="eyebrow">{item.assetClass}</p><h3>{rec?.symbol ? `${rec.symbol} · ` : ""}{item.title}</h3>
           <p>{rec ? `${rec.venue} · ${rec.currency}` : "Theme only; instrument not selected"}</p></div><span className={`recommendation-stance stance-${result.stance}`}>{result.label}</span></header>
-        <div className="recommendation-reasons">
-          <div><h4>Why this investment</h4><p>{rec?.rationale || item.thesis}</p></div>
-          <div><h4>Why now / entry condition</h4><p>{rec?.entryCondition || item.whyNow}</p></div>
-          <div><h4>Valuation and price</h4><p>{rec?.valuation || "Current valuation has not been established. A good theme is not proof of a good entry price."}</p>
-            <p>{rec?.quote ? `${rec.quote.price} ${rec.currency} · as of ${rec.quote.asOf}${result.quoteReady ? "" : " · stale or unverified"}` : "No verified current price."}</p>
-            {rec?.quote?.sourceUrl.startsWith("https://") ? <a href={rec.quote.sourceUrl} target="_blank" rel="noreferrer">Price source</a> : null}</div>
-          <div><h4>Fit for you</h4><p>{item.fitNotes}</p><p>{profile.holdingsNotes || "Actual portfolio overlap, spending currency and liquidity are not yet reviewed."}</p></div>
-          <div><h4>What could go wrong</h4><ul>{item.risks.map(risk => <li key={risk}>{risk}</li>)}</ul></div>
-          <div><h4>What would change the view</h4><ul>{(rec?.thesisBreakers ?? item.openQuestions).map(reason => <li key={reason}>{reason}</li>)}</ul>
-            {rec?.alternatives.length ? <p><strong>Compare with:</strong> {rec.alternatives.join("; ")}</p> : null}</div>
-        </div>
-        <DecisionBrief item={item} profile={profile} market={marketData ? { ...marketData, result: marketRecords[rec?.symbol ?? ""] } : undefined} onSave={onSave}/>
-        <details className="recommendation-evidence"><summary>{result.blockers.length} pending checks · {item.sources.length} source(s) · {item.confidence} confidence</summary>
-          <ul>{result.blockers.map(blocker => <li key={blocker}>{blocker}</li>)}</ul>
-          {item.sources.map(source => <p key={source.id}><a href={/^https:\/\//.test(source.url) ? source.url : undefined} target="_blank" rel="noreferrer">{source.title}</a> · {source.checkedAt}<br/>{source.claim}</p>)}</details>
-        <button className="secondary-button" onClick={() => onOpen(item)}>Review investment case</button>
+        <p className="investment-rationale">{rec?.rationale || item.thesis}</p>
+        <div className="shortlist-facts"><div><h4>Fit for you</h4><p>{profileFitReason(item, profile)}</p></div><div><h4>Main risk</h4><p>{item.risks[0] || "Risk assessment still needed."}</p></div></div>
+        <footer><span>{rec?.quote ? `${rec.quote.price} ${rec.currency} · ${rec.quote.asOf}${result.quoteReady ? "" : " · needs refresh"}` : "Price not checked"}</span><button className="secondary-button" onClick={() => onOpen(item)}>View investment <ArrowRight size={16}/></button></footer>
       </article>;
     })}
   </section>;

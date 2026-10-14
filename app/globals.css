@@ -1,5 +1,66 @@
 @import "tailwindcss";
 
+.simple-app { min-height: 100vh; }
+.simple-app * { letter-spacing: 0; }
+.simple-app .eyebrow, .simple-app .brand-mark { letter-spacing: 0; }
+.app-topbar { background: white; border-bottom: 1px solid #dce2de; padding: 20px max(24px, calc((100% - 1100px) / 2)); display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.simple-app .brand-lockup { padding: 0; }
+.simple-app .brand-mark { border-radius: 6px; width: 36px; height: 36px; background: #16714b; font-size: 15px; }
+.simple-app .brand-lockup h1 { font-size: 18px; line-height: 1.3; max-width: 210px; margin: 0; }
+.primary-nav { display: flex; gap: 8px; }
+.primary-nav button { display: flex; gap: 8px; align-items: center; white-space: nowrap; background: transparent; border: 0; padding: 12px; color: #606a65; border-bottom: 2px solid transparent; }
+.primary-nav button[aria-current="page"] { border-color: #16714b; color: #16714b; font-weight: 700; }
+.app-content { width: min(1100px, 100%); padding: 32px 24px; margin: auto; }
+.app-footer { text-align: center; font-size: 12px; color: #646e69; padding: 24px; border-top: 1px solid #dce2de; }
+.simple-app .primary-button, .simple-app .secondary-button, .simple-app .danger-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border-radius: 6px; min-height: 40px; line-height: 1.4; box-shadow: none; }
+.text-button { display: inline-flex; align-items: center; gap: 8px; padding: 6px 0; background: none; border: 0; color: #16714b; font-weight: 600; }
+.back-button { margin-bottom: 24px; }
+.profile-prompt { display: flex; gap: 20px; justify-content: space-between; align-items: center; background: #edf5ef; border-left: 3px solid #16714b; padding: 20px; }
+.profile-prompt p { margin: 6px 0 0; color: #47564e; }
+.profile-prompt button { flex-shrink: 0; }
+.profile-context { color: #646e69; margin: 0; text-transform: capitalize; }
+.profile-context button { margin-left: 12px; text-transform: none; }
+.shortlist-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; padding: 12px 0; }
+.simple-app .recommendation-record { box-shadow: none; }
+.simple-app .recommendation-record header p { margin: 4px 0; font-size: 13px; }
+.simple-app .recommendation-record header h3 { line-height: 1.4; }
+.simple-app .recommendation-record .investment-rationale { color: #202624; max-width: 90ch; margin: 14px 0 4px; }
+.shortlist-facts p { margin: 0; font-size: 14px; }
+.recommendation-record footer { border-top: 1px solid #e2e6e3; padding-top: 14px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.recommendation-record footer span { font-size: 13px; color: #646e69; }
+.page-heading { margin-bottom: 28px; }
+.page-heading h2 { font-size: 24px; margin: 0 0 8px; }
+.page-heading p { color: #646e69; line-height: 1.5; }
+.profile-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; }
+.profile-wide { grid-column: 1 / -1; }
+.simple-app input, .simple-app select, .simple-app textarea { max-width: 100%; border-radius: 6px; background: white; }
+.simple-app .field { min-width: 0; }
+.simple-app details { margin: 20px 0; }
+.simple-app summary { cursor: pointer; font-weight: 600; line-height: 1.5; }
+.profile-extras { padding: 18px 0; border-top: 1px solid #dce2de; border-bottom: 1px solid #dce2de; }
+.profile-extras .field { margin-top: 16px; }
+.simple-app .panel { border: 0; border-radius: 0; padding: 24px 0; box-shadow: none; background: transparent; }
+.simple-app .panel-header h3 { font-size: 20px; }
+.case-overview { padding-bottom: 16px; border-bottom: 1px solid #dce2de; }
+.case-overview h3 { font-size: 16px; margin: 20px 0 8px; }
+.case-overview p, .case-overview li { line-height: 1.6; }
+.simple-app .decision-brief, .simple-app .market-data-panel, .simple-app .ai-unlock { border-radius: 0; box-shadow: none; border: 0; background: transparent; padding: 20px 0; }
+.advanced-workspace { padding: 20px 0; border-top: 1px solid #dce2de; border-bottom: 1px solid #dce2de; }
+.simple-app button:focus-visible, .simple-app summary:focus-visible { outline: 2px solid #16714b; outline-offset: 3px; }
+@media (max-width: 700px) {
+  .app-topbar { flex-direction: column; align-items: stretch; gap: 16px; padding: 18px 16px 0; }
+  .simple-app .brand-lockup h1 { max-width: none; }
+  .primary-nav { justify-content: space-between; gap: 0; }
+  .primary-nav button { padding: 12px 4px; gap: 5px; font-size: 13px; }
+  .app-content { padding: 24px 16px; }
+  .simple-app .recommendations-heading, .profile-prompt { flex-direction: column; align-items: stretch; }
+  .profile-form-grid, .shortlist-facts { grid-template-columns: 1fr; }
+  .simple-app .recommendation-record { padding: 16px; }
+  .simple-app .recommendation-record header { flex-direction: column; }
+  .recommendation-record footer { align-items: stretch; flex-direction: column; }
+  .profile-context button { margin-left: 0; display: flex; }
+}
+
 .recommendations-view { display: grid; gap: 18px; }
 .recommendations-heading, .recommendation-record header { display: flex; justify-content: space-between; align-items: start; gap: 16px; }
 .recommendations-heading h2 { font-size: 24px; margin: 0; }
@@ -22,13 +83,13 @@
 
 :root {
   color-scheme: light;
-  --ink: #0f172a;
-  --muted: #64748b;
+  --ink: #202624;
+  --muted: #646e69;
   --soft: #f8fafc;
   --panel: #ffffff;
   --line: #dbe3ef;
-  --accent: #2563eb;
-  --accent-dark: #1d4ed8;
+  --accent: #16714b;
+  --accent-dark: #105939;
   --gold: #b7791f;
   --green: #047857;
   --red: #b91c1c;
@@ -41,10 +102,7 @@ html { scroll-behavior: smooth; }
 
 body {
   margin: 0;
-  background:
-    radial-gradient(circle at 10% 0%, rgba(37, 99, 235, 0.16), transparent 30rem),
-    radial-gradient(circle at 100% 20%, rgba(183, 121, 31, 0.10), transparent 28rem),
-    linear-gradient(180deg, #f8fafc 0%, #edf2f8 100%);
+  background: #f7f8f7;
   color: var(--ink);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }

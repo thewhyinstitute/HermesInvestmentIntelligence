@@ -5,6 +5,7 @@ import { isBriefAssumptions } from "@/lib/brief-validation";
 import type { MarketResponse } from "@/lib/market-data";
 import type { BriefAssumptions, InvestmentProfile, ResearchItem } from "@/lib/types";
 import { AIReviewPanel } from "./ai-review";
+import { profileIsComplete } from "@/lib/profile-guidance";
 import { supportedSymbols, type MarketSymbol } from "@/lib/market-data";
 
 export function DecisionBrief({ item, profile, market, onSave }: { item: ResearchItem; profile: InvestmentProfile; market?: MarketResponse; onSave: (item: ResearchItem) => void }) {
@@ -40,7 +41,7 @@ export function DecisionBrief({ item, profile, market, onSave }: { item: Researc
     <p><strong>Portfolio fit:</strong> {brief.portfolioFit}</p>
     {item.recommendation && supportedSymbols.includes(item.recommendation.symbol as MarketSymbol) && <AIReviewPanel input={{
       symbol: item.recommendation.symbol as MarketSymbol, thesis: item.recommendation.rationale || item.thesis,
-      entryCondition: brief.conditions, facts: brief.facts, gaps: brief.gaps, risks: item.risks,
+      entryCondition: brief.conditions, facts: [...brief.facts, ...(profileIsComplete(profile) ? [`User-stated preferences (not market evidence): goal ${profile.goal}; horizon ${profile.horizon}; risk tolerance ${profile.riskLevel}; spending currency ${profile.baseCurrency}; experience ${profile.experience}.`] : [])], gaps: [...brief.gaps, ...(!profileIsComplete(profile) ? ["Personal investment profile is incomplete; do not claim personal suitability."] : [])], risks: item.risks,
       scenarios: brief.scenarios.map(s => `${s.name}: assumed ending price ${s.terminal ?? "not set"}; total return ${s.returns?.total ?? "not calculated"}; annualized equivalent ${s.returns?.annualized ?? "not calculated"}. User assumptions, not forecasts.`),
       sources: item.sources.filter(source => source.url.startsWith("https://")).slice(0, 12).map(source => ({ id: source.id, title: source.title, url: source.url, claim: `${source.checkedAt}: ${source.claim}` })),
     }}/>}

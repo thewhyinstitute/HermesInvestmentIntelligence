@@ -1,4 +1,5 @@
 import type { InvestmentProfile, InvestmentStance, ResearchItem } from "./types";
+import { profileIsComplete, profilePriorityAdjustment } from "./profile-guidance";
 import { evaluateMemoTrust, reviewEvidenceSource, scorePortfolioFit } from "./workflows";
 
 export const stanceLabels: Record<InvestmentStance, string> = {
@@ -29,6 +30,8 @@ export function evaluateRecommendation(item: ResearchItem, profile: InvestmentPr
     && reviewEvidenceSource({ id: "quote", title: "Price", sourceType: "market_data", quality: "high", checkedAt: quote.asOf, claim: "Price", url: quote.sourceUrl }).hostname !== "unverified-url"
     && !/example\.com|replace-with/.test(quote.sourceUrl);
   const blockers = [
+    !profileIsComplete(profile) ? "Complete your investment goals, budget, currency and experience profile." : "",
+    profilePriorityAdjustment(item, profile) <= -60 ? "This investment conflicts with your stated goal, risk preference or time horizon." : "",
     !recommendation?.symbol.trim() || !recommendation?.venue.trim() || !recommendation?.currency.trim() ? "Choose a specific instrument, exchange and quote currency." : "",
     !quoteReady ? "Verify a current price and its dated source (within four days)." : "",
     !recommendation?.valuation.trim() ? "Document valuation or yield versus alternatives." : "",
@@ -48,7 +51,7 @@ export function evaluateRecommendation(item: ResearchItem, profile: InvestmentPr
   if (item.status === "rejected" || item.decision === "avoid" || symbolExcluded || fit.blockers.some(b => b.includes("exclusion"))) stance = "avoid";
   if ((stance === "consider_buying" || stance === "accumulate") && blockers.length) stance = "wait";
   return { item, stance, label: stanceLabels[stance], blockers: [...new Set(blockers)], ready: blockers.length === 0,
-    fit, trust, quoteReady, rank: (stance === "avoid" ? -1000 : 0) + trust.score + fit.score - blockers.length * 5 };
+    fit, trust, quoteReady, rank: (stance === "avoid" ? -1000 : 0) + trust.score + fit.score - blockers.length * 5 + profilePriorityAdjustment(item, profile) };
 }
 
 export function rankRecommendations(items: ResearchItem[], profile: InvestmentProfile, now = new Date()) {
