@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import { MarketDataPanel } from "./market-data-panel";
 import { DecisionBrief } from "./decision-brief";
+import { AIUnlock } from "./ai-access";
 import type { MarketResponse, MarketResult } from "@/lib/market-data";
 import { rankRecommendations, stanceLabels } from "@/lib/recommendations";
 import type { InvestmentProfile, InvestmentRecommendation, InvestmentStance, ResearchItem } from "@/lib/types";
@@ -29,6 +30,7 @@ export function RecommendationsView({ items, profile, scanning, status, onRefres
       <option value="all">All candidates</option>{Object.entries(stanceLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
       <p className="notice">{status}</p></div>
     <p className="shortlist-boundary">Ranked by evidence and profile fit, not predicted returns. Holdings review: {profile.holdingsReviewedAt || "not completed"}. Prices are end-of-day review inputs, not execution quotes.</p>
+    <AIUnlock/>
     <MarketDataPanel items={items} onOpen={onOpen} onData={receiveData}/>
     {visible.length === 0 ? <p className="empty-state">No candidates in this stance.</p> : visible.slice(0, 5).map((result, index) => {
       const item = result.item; const rec = item.recommendation;

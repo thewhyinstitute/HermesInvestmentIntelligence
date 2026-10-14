@@ -1,20 +1,17 @@
-import { createHash, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { aiReviewSchema, isAIReviewInput, parseAIReview, reviewContext } from "@/lib/ai-review";
+import { aiConfigured, aiSessionStatus, authenticatedAIRequest, createAISession, sameOriginRequest, setAISessionCookie } from "@/lib/ai-session";
 
 export const maxDuration = 60;
+export const dynamic = "force-dynamic";
 const model = () => process.env.OPENAI_MODEL === "gpt-6.1-sol" ? "gpt-6.1-sol" : "gpt-6-luna";
 const json = (body: unknown, status = 200) => NextResponse.json(body, { status, headers: { "Cache-Control": "private, no-store" } });
-export async function GET() {
-  return json({ configured: !!process.env.OPENAI_API_KEY?.trim() && (process.env.INVESTMENT_AI_ACCESS_TOKEN?.trim().length ?? 0) >= 24, model: model(), accessRequired: true });
-}
+export async function GET(request: Request) { return aiSessionStatus(request); }
 export async function POST(request: Request) {
-  const token = process.env.INVESTMENT_AI_ACCESS_TOKEN;
   const key = process.env.OPENAI_API_KEY;
-  if (!key?.trim() || !token || token.trim().length < 24) return json({ error: "AI is not activated. Configure OPENAI_API_KEY and INVESTMENT_AI_ACCESS_TOKEN in Vercel, then redeploy." }, 503);
-  const supplied = request.headers.get("authorization")?.replace(/^Bearer /, "") ?? "";
-  const digest = (value: string) => createHash("sha256").update(value).digest();
-  if (!timingSafeEqual(digest(token), digest(supplied))) return json({ error: "Private AI access password is incorrect." }, 401);
+  if (!aiConfigured()) return json({ error: "AI is not activated. Configure OPENAI_API_KEY and INVESTMENT_AI_ACCESS_TOKEN in Vercel, then redeploy." }, 503);
+  if (!sameOriginRequest(request)) return json({ error: "Same-origin AI request required." }, 403);
+  if (!authenticatedAIRequest(request)) return json({ error: "Unlock AI once at the top of Recommendations." }, 401);
   if (!(request.headers.get("content-type") ?? "").includes("application/json")) return json({ error: "JSON input required." }, 400);
   const raw = await request.text();
   if (raw.length > 12000) return json({ error: "Research context is too large. Reduce source claims before retrying." }, 413);
@@ -37,8 +34,8 @@ export async function POST(request: Request) {
     if (content.some((part: { type?: string }) => part.type === "refusal")) return json({ error: "The model declined this review." }, 422);
     const output = content.filter((part: { type?: string }) => part.type === "output_text").map((part: { text?: string }) => part.text ?? "").join("");
     const review = parseAIReview(JSON.parse(output), input.sources.map(source => source.id));
-    return json({ review, model: model(), generatedAt: new Date().toISOString(), usage: {
+    return setAISessionCookie(json({ review, model: model(), generatedAt: new Date().toISOString(), usage: {
       inputTokens: payload.usage?.input_tokens ?? null, outputTokens: payload.usage?.output_tokens ?? null },
-      boundary: "AI research draft; not independently verified. Human review required. Existing decision gates remain unchanged." });
+      boundary: "AI research draft; not independently verified. Human review required. Existing decision gates remain unchanged." }), createAISession());
   } catch { return json({ error: "AI review could not be completed or validated. No automatic retry was made." }, 502); }
 }

@@ -1,13 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { isAIReviewInput, parseAIReview } from "./ai-review";
 import { GET, POST } from "../app/api/ai/review/route";
+import { createAISession, sessionCookieName } from "./ai-session";
 
 const token = "test-private-access-password-12345";
 const input = { symbol: "NVDA", thesis: "Research AI infrastructure", entryCondition: "Verify valuation", facts: [], gaps: ["No price"], risks: ["Concentration"], scenarios: [], sources: [{ id: "issuer", title: "Issuer", url: "https://investor.nvidia.com", claim: "Identity only" }] };
 const review = { summary: "Price is missing", assessment: "wait", caseFor: ["Business exposure"], caseAgainst: ["Concentration"], whatToVerify: ["Price"], sourceIds: ["issuer"] };
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 function configure() { vi.stubEnv("OPENAI_API_KEY", "test-openai-key"); vi.stubEnv("INVESTMENT_AI_ACCESS_TOKEN", token); }
-function request(body: unknown = input, password = token) { return new Request("http://localhost/api/ai/review", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${password}` }, body: JSON.stringify(body) }); }
+function request(body: unknown = input, password = token) {
+  const session = process.env.INVESTMENT_AI_ACCESS_TOKEN === token && password === token ? createAISession() : "invalid";
+  return new Request("http://localhost/api/ai/review", { method: "POST", headers: { "Content-Type": "application/json", Origin: "http://localhost", Cookie: `${sessionCookieName()}=${session}` }, body: JSON.stringify(body) });
+}
 
 describe("private AI research review", () => {
   it("validates context and rejects unrecognized citations and buy instructions", () => {
@@ -20,8 +24,8 @@ describe("private AI research review", () => {
   it("fails closed without both required credentials and never calls OpenAI", async () => {
     vi.stubEnv("OPENAI_API_KEY", ""); vi.stubEnv("INVESTMENT_AI_ACCESS_TOKEN", "");
     const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
-    expect((await GET()).status).toBe(200);
-    expect((await (await GET()).json()).configured).toBe(false);
+    expect((await GET(new Request("http://localhost/api/ai/review"))).status).toBe(200);
+    expect((await (await GET(new Request("http://localhost/api/ai/review"))).json()).configured).toBe(false);
     expect((await POST(request())).status).toBe(503); expect(fetchMock).not.toHaveBeenCalled();
   });
   it("rejects unauthenticated requests and oversized contexts before spending", async () => {
